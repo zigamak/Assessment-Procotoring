@@ -1,0 +1,46 @@
+<!-- Proctoring Widget HTML -->
+<!-- NEW: Start Assessment Overlay/Popup - This will be displayed centrally -->
+<div id="startAssessmentOverlay" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h2 class="modal-title">Ready to begin your assessment?</h2>
+        <p class="modal-message">Ensure you are in a quiet environment with good lighting.<br>Your camera will be used for proctoring.</p>
+        <button id="startAssessmentButton" disabled class="modal-button primary-button">
+            Start Assessment
+        </button>
+    </div>
+</div>
+
+<div id="proctoringSection" class="p-6 rounded-lg shadow-lg bg-white mb-8 text-center">
+    <div id="proctoringStatusDisplay" class="status-box mb-4">
+        <p id="proctoringStatusText" class="text-gray-700">Initializing proctoring system...</p>
+    </div>
+
+    <!-- Camera Section: Positioned top-right via CSS -->
+    <div id="cameraSection" class="relative w-full max-w-lg mx-auto bg-gray-200 rounded-md overflow-hidden shadow-md border-2 border-gray-300">
+        <video id="proctoringVideo" autoplay muted class="w-full h-auto block rounded-md"></video>
+        <canvas id="proctoringCanvas" class="absolute top-0 left-0 w-full h-full"></canvas>
+        <div id="faceCountDisplay" class="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded-md">
+            Initializing camera...
+        </div>
+    </div>
+
+    <!-- Removed button-group as Start Assessment is now in overlay -->
+</div>
+
+<!-- Modals for Proctoring Alerts (hidden by default) -->
+<div id="proctoringErrorModalOverlay" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3 class="modal-title">Assessment Interrupted!</h3>
+        <p id="proctoringModalErrorMessage" class="modal-message">An unexpected error occurred or proctoring conditions were not met. Your assessment session has been terminated.</p>
+        <button id="proctoringModalCloseButton" class="modal-button primary-button">Acknowledge</button>
+    </div>
+</div>
+
+<div id="proctoringFullscreenPromptOverlay" class="modal-overlay hidden">
+    <div class="modal-content prompt">
+        <h3 class="modal-title">Return to Fullscreen Mode</h3>
+        <p class="modal-message"><span id="fullscreenCountdownText">To continue the assessment, you must remain in fullscreen mode.</span></p>
+        <button id="proctoringReEnterFullscreenButton" class="modal-button primary-button">Go Fullscreen</button>
+        <button id="proctoringCancelAssessmentButton" class="modal-button secondary-button">Cancel Assessment</button>
+    </div>
+</div>

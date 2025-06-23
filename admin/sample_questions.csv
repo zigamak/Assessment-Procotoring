@@ -1,0 +1,6 @@
+"What is the capital of France?",multiple_choice,1,,0,"Paris","Berlin","Rome","Madrid"
+"The Earth orbits the Sun.",true_false,1,,"True"
+"Who painted the Mona Lisa?",short_answer,2,,""
+"Explain the concept of supply and demand.",essay,10,,""
+"Which planet is known as the Red Planet?",multiple_choice,1,,0,"Mars","Jupiter","Venus","Saturn"
+"Is the sky blue?",true_false,1,,"True"

@@ -1,0 +1,235 @@
+/* General Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+body {
+    background-color: #f4f7fa;
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Proctoring Section */
+#proctoringSection {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    padding: 16px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Camera Section */
+#cameraSection {
+    width: 100%;
+    height: 180px;
+    background: #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid #d1d5db;
+    transition: border-color 0.3s ease;
+}
+
+#cameraSection:hover {
+    border-color: #3b82f6;
+}
+
+#proctoringVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#proctoringCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#faceCountDisplay {
+    bottom: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+/* Status Box */
+.status-box {
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.status-box.info {
+    background: #e0f2fe;
+    color: #1e40af;
+}
+
+.status-box.success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-box.warning {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.status-box.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Modal Overlay (Start Assessment, Error, Fullscreen Prompt) */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.modal-overlay.active, .modal-overlay:not(.hidden) {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal-content {
+    background: #fff;
+    padding: 24px;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #1f2937;
+}
+
+.modal-message {
+    font-size: 16px;
+    color: #4b5563;
+    margin-bottom: 20px;
+}
+
+.modal-button {
+    padding: 12px 24px;
+    margin: 8px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.modal-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.primary-button {
+    background: #10b981;
+    color: #fff;
+}
+
+.primary-button:hover:not(:disabled) {
+    background: #059669;
+    transform: translateY(-2px);
+}
+
+.secondary-button {
+    background: #ef4444;
+    color: #fff;
+}
+
+.secondary-button:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+/* Start Assessment Overlay Specific */
+#startAssessmentOverlay .modal-content {
+    padding: 32px;
+}
+
+#startAssessmentButton {
+    font-size: 20px;
+    padding: 16px 32px;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+/* Fullscreen Mode: Hide Header and Footer */
+:fullscreen header, :fullscreen .header,
+:fullscreen footer, :fullscreen .footer {
+    display: none !important;
+}
+
+/* Ensure Quiz Content is Visible */
+main, .quiz-content, #quizSection {
+    margin-right: 360px;
+    padding: 20px;
+    z-index: 1;
+    position: relative;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    #proctoringSection {
+        width: 280px;
+        top: 10px;
+        right: 10px;
+    }
+
+    #cameraSection {
+        height: 160px;
+    }
+
+    main, .quiz-content, #quizSection {
+        margin-right: 0;
+        padding: 10px;
+    }
+
+    #startAssessmentButton {
+        font-size: 18px;
+        padding: 12px 24px;
+    }
+
+    .modal-content {
+        padding: 20px;
+    }
+}
