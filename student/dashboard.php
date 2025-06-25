@@ -15,6 +15,34 @@ $all_previous_attempts = []; // Renamed from $recent_attempts
 $attempts_summary_per_quiz = []; // New variable for total attempts per quiz
 $user_id = getUserId(); // Get the logged-in student's user_id
 
+// --- START: Verification Check Integration ---
+$verification_completed = false;
+$current_passport_image = '';
+$current_city = '';
+$current_state = '';
+$current_country = '';
+
+try {
+    $stmt = $pdo->prepare("SELECT passport_image_path, city, state, country FROM users WHERE user_id = :user_id");
+    $stmt->execute(['user_id' => $user_id]);
+    $user_verification_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($user_verification_data) {
+        $current_passport_image = $user_verification_data['passport_image_path'] ?? '';
+        $current_city = $user_verification_data['city'] ?? '';
+        $current_state = $user_verification_data['state'] ?? '';
+        $current_country = $user_verification_data['country'] ?? '';
+
+        if (!empty($current_passport_image) && !empty($current_city) && !empty($current_state) && !empty($current_country)) {
+            $verification_completed = true;
+        }
+    }
+} catch (PDOException $e) {
+    error_log("Student Dashboard Verification Check Error: " . $e->getMessage());
+    $message = display_message("Could not check verification status. Please try again later.", "error");
+}
+// --- END: Verification Check Integration ---
+
 try {
     // Fetch assessments available to the student (not public, or assessments assigned/relevant)
     $stmt = $pdo->prepare("
@@ -113,8 +141,23 @@ try {
 
     <?php echo $message; // Display any feedback messages ?>
 
+    <?php if (!$verification_completed): ?>
+    <div id="verificationModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-red-600 mb-4">Verification Required!</h2>
+            <p class="text-gray-700 mb-6">
+                To access assessments and other features, you must complete your profile verification by uploading a passport/ID image and providing your **City, State, and Country**.
+            </p>
+            <div class="flex justify-end space-x-4">
+                <a href="<?php echo BASE_URL; ?>student/profile.php" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+                    Go to Profile
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <!-- Dashboard Card 1: Available Assessments -->
         <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-800">Assessments Available</h2>
@@ -127,7 +170,6 @@ try {
             </div>
         </div>
 
-        <!-- Dashboard Card 2: Total Completed Assessments -->
         <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-800">Total Completed Assessments</h2>
@@ -146,7 +188,6 @@ try {
             </div>
         </div>
         
-        <!-- Dashboard Card 3: Assessments Passed -->
         <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center justify-center">
             <h2 class="text-xl font-semibold text-gray-800">Assessments Passed</h2>
             <p class="text-3xl font-bold text-blue-600 mt-2"><?php
@@ -195,8 +236,12 @@ try {
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <?php if ($verification_completed): ?>
                             <a href="<?php echo BASE_URL; ?>student/take_quiz.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
                                class="text-green-600 hover:text-green-900">Start Assessment</a>
+                            <?php else: ?>
+                            <span class="text-gray-400 cursor-not-allowed" title="Verification required to start assessment">Start Assessment</span>
+                            <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -294,3 +339,24 @@ try {
 // Include the student specific footer
 require_once '../includes/footer_student.php';
 ?>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const verificationModal = document.getElementById('verificationModal');
+        const startAssessmentLinks = document.querySelectorAll('a[href*="take_quiz.php"]');
+
+        // Check if the modal exists (meaning verification is not completed)
+        if (verificationModal) {
+            // Disable actual navigation for "Start Assessment" links
+            startAssessmentLinks.forEach(link => {
+                link.addEventListener('click', function(event) {
+                    // Only prevent default if the verification modal is active
+                    if (verificationModal.style.display !== 'none') {
+                        event.preventDefault();
+                        // You could also add a visual cue here, e.g., a subtle shake animation to the modal
+                    }
+                });
+            });
+        }
+    });
+</script>
