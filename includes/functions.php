@@ -2,6 +2,12 @@
 // includes/functions.php
 // Common utility functions for the assessment system.
 
+// Ensure session is started if it hasn't been already
+// This is crucial for accessing $_SESSION variables like 'user_role'
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
 /**
  * Sanitize input data to prevent XSS attacks and ensure data integrity.
  * @param mixed $data The data to sanitize.
@@ -59,5 +65,16 @@ function display_message($message, $type = 'info') {
     echo "'>" . sanitize_input($message) . "</div>";
 }
 
+/**
+ * Checks if the currently logged-in user has an 'admin' role.
+ * Assumes user role is stored in $_SESSION['user_role'].
+ * @return bool True if the user is an admin, false otherwise.
+ */
+function isAdmin() {
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
+}
+
 // Add more general utility functions as needed.
 // For example, functions to format dates, validate emails, etc.
+
+?>

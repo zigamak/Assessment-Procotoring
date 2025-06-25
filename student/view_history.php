@@ -3,24 +3,34 @@
 // Allows students to view their quiz history and detailed results for specific attempts.
 
 require_once '../includes/session.php';
-require_once '../includes/db.php';
-require_once '../includes/functions.php';
+require_once '../includes/db.php'; // Make sure this connects successfully and sets $pdo
+require_once '../includes/functions.php'; // Make sure this contains getUserId() and sanitize_input(), display_message()
 
 // Include the student specific header. This also handles role enforcement.
 require_once '../includes/header_student.php';
 
 $message = ''; // Initialize message variable for feedback
 $user_id = getUserId(); // Get the ID of the currently logged-in student
+
+// Redirect if user_id is not available (not logged in or session issue)
+if (!$user_id) {
+    // This scenario should ideally be handled by header_student.php, but good to have a fallback
+    redirect('login.php'); // Or appropriate redirect for not logged in users
+    exit();
+}
+
 $attempts = []; // Array to hold fetched quiz attempts for overview
 $current_attempt = null; // Object to hold detailed data for a single attempt view
-$proctoring_logs = []; // Array to hold fetched proctoring logs for a specific attempt
 
 // Sanitize the input attempt_id from the GET request
-$view_attempt_id = sanitize_input($_GET['attempt_id'] ?? null);
+// Ensure attempt_id is an integer if present, for strict type checking in queries
+$view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
 
-try {
-    if ($view_attempt_id) {
-        // Fetch detailed results and proctoring logs for a specific attempt for the current student
+// Main logic to fetch either overview or detailed attempt
+if ($view_attempt_id) {
+    // Detailed View Logic
+    try {
+        // Fetch detailed results for a specific attempt for the current student
         $stmt = $pdo->prepare("
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
@@ -34,39 +44,49 @@ try {
 
         if ($current_attempt) {
             // Fetch answers for this attempt
-            // GROUP_CONCAT is used to aggregate correct options for multiple choice questions
-            $stmt_answers = $pdo->prepare("
-                SELECT
-                    a.answer_id, a.answer_text, a.is_correct,
-                    qs.question_id, qs.question_text, qs.question_type, qs.score as question_score,
-                    o.option_text as selected_option_text,
-                    GROUP_CONCAT(DISTINCT CONCAT(opt.option_text, '||', opt.is_correct) SEPARATOR ';;') as correct_options_data
-                FROM answers a
-                JOIN questions qs ON a.question_id = qs.question_id
-                LEFT JOIN options o ON a.selected_option_id = o.option_id
-                LEFT JOIN options opt ON qs.question_id = opt.question_id AND opt.is_correct = TRUE
-                WHERE a.attempt_id = :attempt_id
-                GROUP BY a.answer_id, a.answer_text, a.is_correct, qs.question_id, qs.question_text, qs.question_type, qs.score, o.option_text
-                ORDER BY qs.question_id ASC
-            ");
-            $stmt_answers->execute(['attempt_id' => $view_attempt_id]);
-            $current_attempt['answers'] = $stmt_answers->fetchAll(PDO::FETCH_ASSOC);
+            try {
+                $stmt_answers = $pdo->prepare("
+                    SELECT
+                        a.answer_id, a.answer_text, a.is_correct,
+                        qs.question_id, qs.question_text, qs.question_type, qs.score as question_score,
+                        o.option_text as selected_option_text,
+                        GROUP_CONCAT(DISTINCT CONCAT(opt.option_text, '||', opt.is_correct) SEPARATOR ';;') as correct_options_data
+                    FROM answers a
+                    JOIN questions qs ON a.question_id = qs.question_id
+                    LEFT JOIN options o ON a.selected_option_id = o.option_id
+                    LEFT JOIN options opt ON qs.question_id = opt.question_id AND opt.is_correct = TRUE
+                    WHERE a.attempt_id = :attempt_id
+                    GROUP BY a.answer_id, a.answer_text, a.is_correct, qs.question_id, qs.question_text, qs.question_type, qs.score, o.option_text
+                    ORDER BY qs.question_id ASC
+                ");
+                $stmt_answers->execute(['attempt_id' => $view_attempt_id]);
+                $current_attempt['answers'] = $stmt_answers->fetchAll(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                error_log("Student View History (Answers) Error: " . $e->getMessage());
+                $message .= display_message("An error occurred while fetching answers for this attempt.", "warning");
+                $current_attempt['answers'] = []; // Ensure it's an empty array if fetching fails
+            }
 
-            // Fetch proctoring logs for this attempt
-            $stmt_logs = $pdo->prepare("
-                SELECT log_time, event_type, log_data
-                FROM proctoring_logs
-                WHERE attempt_id = :attempt_id
-                ORDER BY log_time ASC
-            ");
-            $stmt_logs->execute(['attempt_id' => $view_attempt_id]);
-            $proctoring_logs = $stmt_logs->fetchAll(PDO::FETCH_ASSOC);
+            // Proctoring logs are for administrators only, so no fetching or displaying here.
+            // Removed related code.
 
         } else {
             $message = display_message("Attempt not found or you do not have permission to view it.", "error");
+            // If attempt isn't found/permission denied, set $view_attempt_id to null
+            // so that the overview is shown instead of a blank detailed view.
+            $view_attempt_id = null;
         }
 
-    } else {
+    } catch (PDOException $e) {
+        error_log("Student View History (Main Detailed) Error: " . $e->getMessage());
+        $message = display_message("An error occurred while fetching the detailed quiz attempt. Please try again later.", "error");
+        $view_attempt_id = null; // Revert to overview if detailed attempt query failed
+    }
+}
+
+// If not viewing a specific attempt (or if the specific attempt failed/not found), show overview
+if (!$view_attempt_id) {
+    try {
         // Fetch overview of all quiz attempts for the current student
         $stmt = $pdo->prepare("
             SELECT
@@ -79,12 +99,12 @@ try {
         ");
         $stmt->execute(['user_id' => $user_id]);
         $attempts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Student View History (Overview) Error: " . $e->getMessage());
+        $message = display_message("An error occurred while fetching your quiz history overview. Please try again later.", "error");
+        $attempts = []; // Ensure it's an empty array if fetching fails
     }
-} catch (PDOException $e) {
-    error_log("Student View History Error: " . $e->getMessage());
-    $message = display_message("An error occurred while fetching your quiz history. Please try again later.", "error");
 }
-
 ?>
 
 <div class="container mx-auto p-4 py-8">
@@ -92,17 +112,13 @@ try {
 
     <?php echo $message; // Display any feedback messages ?>
 
-    <?php if ($view_attempt_id && isset($current_attempt)): ?>
-        <!-- Detailed View of a Single Quiz Attempt -->
+    <?php if ($view_attempt_id && isset($current_attempt) && $current_attempt): ?>
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">Details for "<?php echo htmlspecialchars($current_attempt['quiz_title']); ?>"</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700 mb-6">
                 <p><strong>Attempt ID:</strong> <?php echo htmlspecialchars($current_attempt['attempt_id']); ?></p>
-                <!-- Format start_time to "7:35 PM, June 20, 2025" -->
                 <p><strong>Started:</strong> <?php echo date('g:i A, F j, Y', strtotime($current_attempt['start_time'])); ?></p>
-                <!-- Format end_time or display "Cancelled" -->
-                <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'Cancelled'; ?></p>
-                <!-- Show 'Completed' if is_completed is true, otherwise 'Cancelled' -->
+                <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'N/A'; ?></p>
                 <p><strong>Status:</strong> <?php echo $current_attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></p>
                 <p><strong>Your Score:</strong> <?php echo htmlspecialchars($current_attempt['score'] ?? 'N/A'); ?></p>
             </div>
@@ -121,9 +137,12 @@ try {
                                 if (!empty($answer['correct_options_data'])) {
                                     $options_raw = explode(';;', $answer['correct_options_data']);
                                     foreach ($options_raw as $opt_str) {
-                                        list($opt_text, $is_correct_val) = explode('||', $opt_str);
-                                        if ((bool)$is_correct_val) {
-                                            $correct_options_parsed[] = $opt_text;
+                                        // Ensure opt_str is not empty and contains '||' to prevent errors
+                                        if (strpos($opt_str, '||') !== false) {
+                                            list($opt_text, $is_correct_val) = explode('||', $opt_str, 2); // Limit split to 2
+                                            if ((bool)$is_correct_val) {
+                                                $correct_options_parsed[] = $opt_text;
+                                            }
                                         }
                                     }
                                 }
@@ -141,44 +160,7 @@ try {
                     </div>
                 <?php endforeach; ?>
             <?php else: ?>
-                <p class="text-gray-600">No answers recorded for this attempt yet.</p>
-            <?php endif; ?>
-
-            <h3 class="text-xl font-semibold text-gray-700 mb-3 mt-6">Proctoring Activity During This Attempt</h3>
-            <?php if (!empty($proctoring_logs)): ?>
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event Type</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-200">
-                        <?php foreach ($proctoring_logs as $log): ?>
-                        <tr>
-                            <!-- Format log_time to "7:35 PM, June 20, 2025" -->
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($log['log_time'])); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', $log['event_type']))); ?></td>
-                            <td class="px-6 py-4 text-sm text-gray-900 break-words max-w-lg">
-                                <?php
-                                    // Attempt to decode JSON data if it's a JSON string
-                                    $log_data = $log['log_data'];
-                                    $decoded_data = json_decode($log_data, true);
-                                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded_data)) {
-                                        echo '<pre class="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-24">' . htmlspecialchars(json_encode($decoded_data, JSON_PRETTY_PRINT)) . '</pre>';
-                                    } else {
-                                        echo htmlspecialchars($log_data);
-                                    }
-                                ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                <p class="text-sm text-gray-500 mt-4"><em>Proctoring logs are for administrator review and indicate activities during the exam.</em></p>
-            <?php else: ?>
-                <p class="text-gray-600">No proctoring logs recorded for this attempt.</p>
+                <p class="text-gray-600">No answers recorded for this attempt yet, or there was an issue retrieving them.</p>
             <?php endif; ?>
 
             <div class="mt-8">
@@ -189,7 +171,6 @@ try {
         </div>
 
     <?php else: ?>
-        <!-- Overview of All Quiz Attempts for the Student -->
         <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">Your Recent Attempts</h2>
             <?php if (empty($attempts)): ?>
@@ -216,15 +197,12 @@ try {
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['score'] ?? 'N/A'); ?></td>
-                            <!-- Format start_time to "7:35 PM, June 20, 2025" -->
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($attempt['start_time'])); ?></td>
-                            <!-- Format end_time or display "Cancelled" -->
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['end_time'] ? date('g:i A, F j, Y', strtotime($attempt['end_time'])) : 'Cancelled'; ?></td>
-                            <!-- Show 'Completed' if is_completed is true, otherwise 'Cancelled' -->
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['end_time'] ? date('g:i A, F j, Y', strtotime($attempt['end_time'])) : 'N/A'; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <a href="view_history.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
-                                   class="text-blue-600 hover:text-blue-900">View Details</a>
+                                    class="text-blue-600 hover:text-blue-900">View Details</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
