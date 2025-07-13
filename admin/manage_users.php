@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     // Prevent admin from deleting themselves
                     if (getUserId() == $user_id) {
-                         $message = display_message("You cannot delete your own account.", "error");
+                           $message = display_message("You cannot delete your own account.", "error");
                     } else {
                         try {
                             $stmt = $pdo->prepare("DELETE FROM users WHERE user_id = :user_id");
@@ -141,14 +141,66 @@ try {
 ?>
 
 <div class="container mx-auto p-4 py-8">
-    <h1 class="text-3xl font-bold text-theme-color mb-6">Manage Users</h1>
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-theme-color">Manage Users</h1>
+        <button onclick="openAddUserModal()"
+                class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
+            Add New User
+        </button>
+    </div>
 
     <?php echo $message; // Display any feedback messages ?>
 
-    <!-- Add New User Form -->
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Add New User</h2>
-        <form action="manage_users.php" method="POST" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto mb-8">
+      
+        <?php if (empty($users)): ?>
+            <p class="text-gray-600">No users found.</p>
+        <?php else: ?>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <?php foreach ($users as $user): ?>
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['user_id']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['username']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['email']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars(ucfirst($user['role'])); ?></td>
+<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+    <?php
+    $dateTime = new DateTime($user['created_at']);
+    echo htmlspecialchars($dateTime->format('j F Y, g:i A'));
+    ?>
+</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="openEditUserModal(<?php echo htmlspecialchars(json_encode($user)); ?>)"
+                                    class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                            <form action="manage_users.php" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
+                                <button type="submit" class="text-red-600 hover:text-red-900">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div id="addUserModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+        <h2 class="text-2xl font-semibold text-gray-800 mb-6">Add New User</h2>
+        <form action="manage_users.php" method="POST" class="space-y-4">
             <input type="hidden" name="action" value="add">
             <div>
                 <label for="add_username" class="block text-gray-700 text-sm font-bold mb-2">Username:</label>
@@ -174,7 +226,11 @@ try {
                     <option value="student">Student</option>
                 </select>
             </div>
-            <div class="md:col-span-2">
+            <div class="flex justify-end space-x-4 mt-6">
+                <button type="button" onclick="closeAddUserModal()"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
+                    Cancel
+                </button>
                 <button type="submit"
                         class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
                     Add User
@@ -182,50 +238,9 @@ try {
             </div>
         </form>
     </div>
-
-    <!-- User List Table -->
-    <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
-        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Existing Users</h2>
-        <?php if (empty($users)): ?>
-            <p class="text-gray-600">No users found.</p>
-        <?php else: ?>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($users as $user): ?>
-                    <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['user_id']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['username']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['email']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars(ucfirst($user['role'])); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($user['created_at']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button onclick="openEditUserModal(<?php echo htmlspecialchars(json_encode($user)); ?>)"
-                                    class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
-                            <form action="manage_users.php" method="POST" class="inline-block" onsubmit="return confirm('Are you sure you want to delete this user?');">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
-                                <button type="submit" class="text-red-600 hover:text-red-900">Delete</button>
-                            </form>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </div>
 </div>
 
-<!-- Edit User Modal (Hidden by default) -->
+
 <div id="editUserModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
     <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
         <h2 class="text-2xl font-semibold text-gray-800 mb-6">Edit User</h2>
@@ -282,6 +297,20 @@ try {
 
     function closeEditUserModal() {
         document.getElementById('editUserModal').classList.add('hidden');
+    }
+
+    // JavaScript for handling the Add New User Modal
+    function openAddUserModal() {
+        document.getElementById('addUserModal').classList.remove('hidden');
+        // Optionally clear the add user form fields when opening
+        document.getElementById('add_username').value = '';
+        document.getElementById('add_email').value = '';
+        document.getElementById('add_password').value = '';
+        document.getElementById('add_role').value = '';
+    }
+
+    function closeAddUserModal() {
+        document.getElementById('addUserModal').classList.add('hidden');
     }
 </script>
 
