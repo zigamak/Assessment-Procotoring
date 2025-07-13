@@ -4,16 +4,16 @@
 
 // Define database credentials
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'assessment_db'); // You might want to change this to your actual database name
-define('DB_USER', 'root');         // Your database username
-define('DB_PASS', '');             // Your database password (leave empty if no password)
+define('DB_NAME', 'u393121361_assessment'); // You might want to change this to your actual database name
+define('DB_USER', 'u393121361_assessment');         // Your database username
+define('DB_PASS', '8AAS!*2P]e');             // Your database password (leave empty if no password)
 define('DB_CHARSET', 'utf8mb4');
 
 // Define Base URL for the application
 // This helps with consistent URL generation, especially for redirects or assets.
 // Example: http://localhost/assessment_system/ or https://yourdomain.com/
-define('BASE_URL', 'http://localhost/assessment/');
-define('SITE_NAME', 'QuizMaster'); // Your application's name for emails
+define('BASE_URL', 'https://assessment.mackennytutors.com/');
+define('SITE_NAME', 'Mackenny Assessments'); // Your application's name for emails
 
 
 // --- SMTP Email Settings (for Forgot Password, etc.) ---
@@ -21,14 +21,9 @@ define('SMTP_HOST', 'eventio.africa');     // e.g., 'smtp.gmail.com' or 'smtp.ma
 define('SMTP_USERNAME', 'mackenny@eventio.africa'); // e.g., your email address for sending
 define('SMTP_PASSWORD', '*3;jW[12A$NS'); // e.g., your email password or app-specific password
 define('SMTP_PORT', 465);                      // Common ports: 465 for SMTPS, 587 for STARTTLS
-define('SMTP_FROM_EMAIL', 'mackenny@eventio.africa'); // Email address messages will be sent FROM
+define('SMTP_FROM_EMAIL', 'no-reply@eventio.africa.com'); // Email address messages will be sent FROM
 define('SMTP_FROM_NAME', 'Mackenny Assessment');             // Name displayed as sender
 
-
-// Paystack API Keys
-// You can get these from your Paystack Dashboard (Settings -> API Keys & Webhooks)
-define('PAYSTACK_PUBLIC_KEY', 'pk_test_d759daee2adf92e49132d87874004ce386a90fc6'); // Replace with your Public Key
-define('PAYSTACK_SECRET_KEY', 'sk_test_a1e790a2f731c935942ea4c74d1747ae844e418d'); // Replace with your Secret Key
 
 // Data Source Name string
 $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;

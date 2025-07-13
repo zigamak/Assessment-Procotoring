@@ -11,8 +11,7 @@ $theme_color = "#1e4b31";
         </main>
         <footer class="bg-gray-800 text-white p-4 text-center mt-auto">
             <div class="container mx-auto">
-                <p>&copy; <?php echo date("Y"); ?> Assessment Proctoring System. Admin Panel.</p>
-                <p class="text-sm mt-1">Admin contact: <a href="mailto:admin@assessmentsystem.com" class="text-blue-400 hover:underline">admin@assessmentsystem.com</a></p>
+                <p>&copy; <?php echo date("Y"); ?> Mackenny Assessment</p>
             </div>
         </footer>
     </div> <!-- Closes the flex-1 div for main content area -->

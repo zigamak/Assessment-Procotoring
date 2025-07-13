@@ -10,9 +10,9 @@ require_once '../includes/functions.php';
 require_once '../includes/header_student.php';
 
 $message = ''; // Initialize message variable for feedback
-$available_assessments = [];
-$all_previous_attempts = []; // Renamed from $recent_attempts
-$attempts_summary_per_quiz = []; // New variable for total attempts per quiz
+$all_assessments_for_display = []; // Will hold all assessments with their status
+$all_previous_attempts = []; // All attempts, to be sliced for display
+$attempts_summary_per_quiz = [];
 $user_id = getUserId(); // Get the logged-in student's user_id
 
 // --- START: Verification Check Integration ---
@@ -43,19 +43,50 @@ try {
 }
 // --- END: Verification Check Integration ---
 
+// --- START: Payment Check Integration ---
+$paid_assessments = []; // To store quizzes for which the student has paid
+
 try {
-    // Fetch assessments available to the student (not public, or assessments assigned/relevant)
+    // Fetch all quizzes and their fees
+    $stmt = $pdo->prepare("SELECT quiz_id, assessment_fee FROM quizzes");
+    $stmt->execute();
+    $all_quiz_fees = $stmt->fetchAll(PDO::FETCH_KEY_PAIR); // quiz_id => assessment_fee
+
+    // Fetch all completed payments for the current user
+    $stmt_payments = $pdo->prepare("SELECT quiz_id FROM payments WHERE user_id = :user_id AND status = 'completed'");
+    $stmt_payments->execute(['user_id' => $user_id]);
+    $user_payments_raw = $stmt_payments->fetchAll(PDO::FETCH_COLUMN);
+    $user_paid_quiz_ids = array_flip($user_payments_raw); // For quick lookup
+
+    // Determine which assessments are 'paid' (have a fee and payment is completed)
+    foreach ($all_quiz_fees as $quiz_id => $fee) {
+        if ($fee > 0 && isset($user_paid_quiz_ids[$quiz_id])) {
+            $paid_assessments[$quiz_id] = true; // Mark as paid
+        } elseif ($fee == 0 || $fee === null) { // Quizzes with no fee (or NULL fee) are considered 'paid'
+            $paid_assessments[$quiz_id] = true;
+        } else {
+            $paid_assessments[$quiz_id] = false; // Fee exists but not paid
+        }
+    }
+} catch (PDOException $e) {
+    error_log("Student Dashboard Payment Check Error: " . $e->getMessage());
+    $message = display_message("Could not check payment status. Please try again later.", "error");
+}
+// --- END: Payment Check Integration ---
+
+// Store max possible scores for all quizzes to use in percentage calculation
+$max_scores_per_quiz = [];
+
+try {
+    // Fetch ALL assessments
     $stmt = $pdo->prepare("
-        SELECT quiz_id, title, description, max_attempts, duration_minutes
+        SELECT quiz_id, title, description, max_attempts, duration_minutes, assessment_fee
         FROM quizzes
-        WHERE is_public = 0 OR is_public = 1
         ORDER BY created_at DESC
     ");
     $stmt->execute();
     $all_assessments_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Filter assessments to show only those a student hasn't exceeded attempts on
-    $available_assessments_filtered = [];
     foreach ($all_assessments_raw as $assessment) {
         $assessment_id = $assessment['quiz_id'];
 
@@ -64,16 +95,24 @@ try {
         $stmt_attempts_count->execute(['user_id' => $user_id, 'quiz_id' => $assessment_id]);
         $attempts_taken = $stmt_attempts_count->fetchColumn();
 
-        if ($assessment['max_attempts'] === 0 || $attempts_taken < $assessment['max_attempts']) {
-            $assessment['attempts_taken'] = $attempts_taken;
-            $available_assessments_filtered[] = $assessment;
-        }
+        $assessment['attempts_taken'] = $attempts_taken;
+        $assessment['is_paid'] = $paid_assessments[$assessment_id] ?? false;
+
+        $all_assessments_for_display[] = $assessment;
     }
-    $available_assessments = $available_assessments_filtered;
 
     // Fetch ALL previous assessment attempts by the current student
+    // Also fetch max_score for each quiz for percentage calculation
     $stmt = $pdo->prepare("
-        SELECT qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed, q.title as quiz_title, q.quiz_id
+        SELECT 
+            qa.attempt_id, 
+            qa.score, 
+            qa.start_time, 
+            qa.end_time, 
+            qa.is_completed, 
+            q.title as quiz_title, 
+            q.quiz_id,
+            (SELECT SUM(score) FROM questions WHERE quiz_id = q.quiz_id) as max_possible_score
         FROM quiz_attempts qa
         JOIN quizzes q ON qa.quiz_id = q.quiz_id
         WHERE qa.user_id = :user_id
@@ -81,6 +120,11 @@ try {
     ");
     $stmt->execute(['user_id' => $user_id]);
     $all_previous_attempts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Populate max_scores_per_quiz for later use
+    foreach ($all_previous_attempts as $attempt) {
+        $max_scores_per_quiz[$attempt['quiz_id']] = $attempt['max_possible_score'];
+    }
 
     // Calculate total attempts per assessment for the summary card
     foreach ($all_previous_attempts as $attempt) {
@@ -93,7 +137,7 @@ try {
                 'total_attempts' => 0,
                 'completed_attempts' => 0,
                 'total_score_sum' => 0,
-                'max_score' => 0, // Will be fetched
+                'max_score' => $attempt['max_possible_score'], // Already fetched
                 'passed_attempts' => 0,
                 'failed_attempts' => 0,
             ];
@@ -103,13 +147,6 @@ try {
         if ($attempt['is_completed']) {
             $attempts_summary_per_quiz[$quiz_id]['completed_attempts']++;
             $attempts_summary_per_quiz[$quiz_id]['total_score_sum'] += $attempt['score'];
-
-            // Fetch max possible score for this specific quiz (if not already fetched)
-            if ($attempts_summary_per_quiz[$quiz_id]['max_score'] === 0) {
-                $stmt_max_score = $pdo->prepare("SELECT SUM(score) FROM questions WHERE quiz_id = :quiz_id");
-                $stmt_max_score->execute(['quiz_id' => $quiz_id]);
-                $attempts_summary_per_quiz[$quiz_id]['max_score'] = $stmt_max_score->fetchColumn();
-            }
 
             // Determine pass/fail for completed attempts
             $max_possible_score = $attempts_summary_per_quiz[$quiz_id]['max_score'];
@@ -161,7 +198,7 @@ try {
         <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-800">Assessments Available</h2>
-                <p class="text-3xl font-bold text-theme-color mt-2"><?php echo htmlspecialchars(count($available_assessments)); ?></p>
+                <p class="text-3xl font-bold text-theme-color mt-2"><?php echo htmlspecialchars(count($all_assessments_for_display)); ?></p>
             </div>
             <div class="text-gray-500">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -205,43 +242,76 @@ try {
         </div>
     </div>
 
-    <h2 class="text-2xl font-bold text-theme-color mb-4">Assessments Available to You</h2>
+    <h2 class="text-2xl font-bold text-theme-color mb-4">All Assessments</h2>
     <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto mb-8">
-        <?php if (empty($available_assessments)): ?>
-            <p class="text-gray-600">No assessments are currently available to you.</p>
+        <?php if (empty($all_assessments_for_display)): ?>
+            <p class="text-gray-600">No assessments found.</p>
         <?php else: ?>
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attempts Left</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attempts</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fee</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status/Actions</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($available_assessments as $assessment): ?>
+                    <?php foreach ($all_assessments_for_display as $assessment): ?>
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['title']); ?></td>
                         <td class="px-6 py-4 text-sm text-gray-900 max-w-xs overflow-hidden text-ellipsis"><?php echo htmlspecialchars($assessment['description']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <?php
-                                if ($assessment['max_attempts'] == 0) {
-                                    echo "Unlimited";
-                                } else {
-                                    echo ($assessment['max_attempts'] - $assessment['attempts_taken']) . " of " . htmlspecialchars($assessment['max_attempts']);
-                                }
+                                $attempts_left = ($assessment['max_attempts'] == 0) ? 'Unlimited' : ($assessment['max_attempts'] - $assessment['attempts_taken']);
+                                $attempts_display = ($assessment['max_attempts'] == 0) ? 'Unlimited' : htmlspecialchars($assessment['attempts_taken']) . ' of ' . htmlspecialchars($assessment['max_attempts']);
+                                echo $attempts_display;
                             ?>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <?php 
+                                echo $assessment['assessment_fee'] > 0 ? '₦' . number_format($assessment['assessment_fee'], 2) : 'Free';
+                            ?>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <?php if ($verification_completed): ?>
-                            <a href="<?php echo BASE_URL; ?>student/take_quiz.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
-                               class="text-green-600 hover:text-green-900">Start Assessment</a>
-                            <?php else: ?>
-                            <span class="text-gray-400 cursor-not-allowed" title="Verification required to start assessment">Start Assessment</span>
-                            <?php endif; ?>
+                            <?php 
+                            $can_start_assessment = true;
+                            $action_link = '';
+                            $action_text = '';
+                            $action_class = '';
+                            $action_title = '';
+
+                            if (!$verification_completed) {
+                                $can_start_assessment = false;
+                                $action_text = 'Verification Required';
+                                $action_class = 'text-gray-400 cursor-not-allowed';
+                                $action_title = 'Please complete your profile verification to start this assessment.';
+                            } elseif ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']) {
+                                $can_start_assessment = false;
+                                $action_text = 'Pay Now (₦' . number_format($assessment['assessment_fee'], 2) . ')';
+                                $action_link = BASE_URL . 'student/make_payment.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']) . '&amount=' . htmlspecialchars($assessment['assessment_fee']);
+                                $action_class = 'text-orange-600 hover:text-orange-800';
+                                $action_title = 'Payment required to start this assessment.';
+                            } elseif ($assessment['max_attempts'] !== 0 && $assessment['attempts_taken'] >= $assessment['max_attempts']) {
+                                $can_start_assessment = false;
+                                $action_text = 'Attempts Exhausted';
+                                $action_class = 'text-red-600';
+                                $action_title = 'You have used all your attempts for this assessment.';
+                            } else {
+                                $action_text = 'Start Assessment';
+                                $action_link = BASE_URL . 'student/take_quiz.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']);
+                                $action_class = 'text-green-600 hover:text-green-900';
+                            }
+
+                            if ($can_start_assessment && !empty($action_link)) {
+                                echo '<a href="' . $action_link . '" class="' . $action_class . '" title="' . $action_title . '">' . $action_text . '</a>';
+                            } else {
+                                echo '<span class="' . $action_class . '" title="' . $action_title . '">' . $action_text . '</span>';
+                            }
+                            ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -250,7 +320,7 @@ try {
         <?php endif; ?>
     </div>
 
-    <h2 class="text-2xl font-bold text-theme-color mb-4">Your Previous Assessment Results</h2>
+    <h2 class="text-2xl font-bold text-theme-color mb-4">Your Recent Assessment Results</h2>
     <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
         <?php if (empty($all_previous_attempts)): ?>
             <p class="text-gray-600">You have not completed any assessments yet.</p>
@@ -267,10 +337,23 @@ try {
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($all_previous_attempts as $attempt): ?>
+                    <?php 
+                    $displayed_attempts_count = 0;
+                    foreach ($all_previous_attempts as $attempt): 
+                        if ($displayed_attempts_count >= 5) break; // Limit to 5 attempts
+                    ?>
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['score'] ?? 'N/A'); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <?php
+                            if ($attempt['is_completed'] && isset($max_scores_per_quiz[$attempt['quiz_id']]) && $max_scores_per_quiz[$attempt['quiz_id']] > 0) {
+                                $percentage_score = ($attempt['score'] / $max_scores_per_quiz[$attempt['quiz_id']]) * 100;
+                                echo htmlspecialchars(round($percentage_score, 2)) . '%';
+                            } else {
+                                echo 'N/A';
+                            }
+                            ?>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <?php echo date('h:i A, j F, Y', strtotime($attempt['start_time'])); ?>
                         </td>
@@ -279,7 +362,6 @@ try {
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <?php
-                                // Logic for status: If completed is 1, then "Completed". Otherwise "Cancelled".
                                 echo $attempt['is_completed'] ? 'Completed' : 'Cancelled';
                             ?>
                         </td>
@@ -288,14 +370,19 @@ try {
                                class="text-blue-600 hover:text-blue-900">View Details</a>
                         </td>
                     </tr>
-                    <?php endforeach; ?>
+                    <?php 
+                    $displayed_attempts_count++;
+                    endforeach; 
+                    ?>
                 </tbody>
             </table>
+            <?php if (count($all_previous_attempts) > 5): ?>
             <div class="mt-4 text-center">
                 <a href="<?php echo BASE_URL; ?>student/view_history.php" class="inline-block bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300">
                     View All History &rarr;
                 </a>
             </div>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 
@@ -311,7 +398,7 @@ try {
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Attempts</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed Attempts</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passed</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
+                        <th scope="col" scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Average Score</th>
                     </tr>
                 </thead>
@@ -324,7 +411,14 @@ try {
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['passed_attempts']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['failed_attempts']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <?php echo $summary['completed_attempts'] > 0 ? round(($summary['total_score_sum'] / $summary['completed_attempts']), 2) : 'N/A'; ?>
+                            <?php 
+                            if ($summary['completed_attempts'] > 0 && $summary['max_score'] > 0) {
+                                $avg_percentage = (($summary['total_score_sum'] / $summary['completed_attempts']) / $summary['max_score']) * 100;
+                                echo htmlspecialchars(round($avg_percentage, 2)) . '%';
+                            } else {
+                                echo 'N/A';
+                            }
+                            ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -343,20 +437,33 @@ require_once '../includes/footer_student.php';
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const verificationModal = document.getElementById('verificationModal');
-        const startAssessmentLinks = document.querySelectorAll('a[href*="take_quiz.php"]');
+        
+        // Intercept clicks on 'Start Assessment' or 'Pay Now' if conditions are not met
+        document.querySelectorAll('a[href*="take_quiz.php"], a[href*="make_payment.php"]').forEach(link => {
+            link.addEventListener('click', function(event) {
+                const row = event.target.closest('tr');
+                if (row) {
+                    // Check if the link itself indicates it's a disabled action (e.g., "Attempts Exhausted")
+                    const isActionDisabled = event.target.classList.contains('cursor-not-allowed') || event.target.classList.contains('text-red-600');
+                    const isPayNowLink = event.target.textContent.includes('Pay Now');
 
-        // Check if the modal exists (meaning verification is not completed)
-        if (verificationModal) {
-            // Disable actual navigation for "Start Assessment" links
-            startAssessmentLinks.forEach(link => {
-                link.addEventListener('click', function(event) {
-                    // Only prevent default if the verification modal is active
-                    if (verificationModal.style.display !== 'none') {
+                    if (isActionDisabled && !isPayNowLink) { // Don't prevent Pay Now, it has its own flow
                         event.preventDefault();
-                        // You could also add a visual cue here, e.g., a subtle shake animation to the modal
+                        const title = event.target.getAttribute('title');
+                        if (title) {
+                            alert(title);
+                        } else {
+                            alert('This action is not available at this time.');
+                        }
+                    } else if (verificationModal && verificationModal.style.display !== 'none' && !isPayNowLink) {
+                        // If verification modal is visible and it's not a pay now link
+                        event.preventDefault();
+                        alert('Please complete your profile verification before starting any assessment.');
+                        verificationModal.style.display = 'flex'; // Re-show modal
                     }
-                });
+                    // If it's a "Pay Now" link, allow default behavior (redirection)
+                }
             });
-        }
+        });
     });
 </script>

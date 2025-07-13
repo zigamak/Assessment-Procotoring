@@ -16,6 +16,10 @@ let fullscreenSecondsLeft = 0;
 const FULLSCREEN_GRACE_DURATION = 30;
 let isFullscreenCountdownActive = false;
 
+// New variable for tracking tab switches
+let tabSwitchCount = 0;
+const MAX_TAB_SWITCHES = 3;
+
 // New variables for additional proctoring features
 let lastCameraActivityTimestamp = Date.now();
 const CAMERA_INACTIVITY_THRESHOLD_MS = 5000; // 5 seconds
@@ -62,6 +66,10 @@ const proctoringReEnterFullscreenButton = document.getElementById('proctoringReE
 const proctoringCancelAssessmentButton = document.getElementById('proctoringCancelAssessmentButton');
 const fullscreenCountdownText = document.getElementById('fullscreenCountdownText');
 
+const proctoringAutoSubmitModalOverlay = document.getElementById('proctoringAutoSubmitModalOverlay');
+const proctoringAutoSubmitMessage = document.getElementById('proctoringAutoSubmitMessage');
+const proctoringAutoSubmitCloseButton = document.getElementById('proctoringAutoSubmitCloseButton');
+
 function initProctoring(callbacks) {
     if (callbacks.onConditionsMet) onProctoringConditionsMetCallback = callbacks.onConditionsMet;
     if (callbacks.onConditionsViolated) onProctoringConditionsViolatedCallback = callbacks.onConditionsViolated;
@@ -76,6 +84,7 @@ function initProctoring(callbacks) {
     proctoringModalCloseButton?.addEventListener('click', hideProctoringErrorModal);
     proctoringReEnterFullscreenButton?.addEventListener('click', reEnterFullscreenFromPrompt);
     proctoringCancelAssessmentButton?.addEventListener('click', cancelAssessmentFromFullscreenPrompt);
+    proctoringAutoSubmitCloseButton?.addEventListener('click', hideProctoringAutoSubmitModal);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -128,15 +137,15 @@ async function startProctoringCamera() {
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true }); // Request audio for audio detection
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
         proctoringVideoElement.srcObject = stream;
         proctoringVideoElement.onloadedmetadata = () => {
             proctoringCanvasElement.width = proctoringVideoElement.videoWidth;
             proctoringCanvasElement.height = proctoringVideoElement.videoHeight;
             proctoringFaceCountDisplay.textContent = "Camera ready.";
             proctoringVideoElement.play();
-            lastCameraActivityTimestamp = Date.now(); // Initialize camera activity timestamp
-            startAudioMonitoring(stream); // Start audio monitoring
+            lastCameraActivityTimestamp = Date.now();
+            startAudioMonitoring(stream);
             updateProctoringConditions();
         };
         sendProctoringLogCallback('camera_started', 'Webcam stream initiated successfully.');
@@ -153,10 +162,10 @@ function startAudioMonitoring(stream) {
     }
     if (!analyser) {
         analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256; // Smaller FFT size for quicker analysis
+        analyser.fftSize = 256;
     }
 
-    if (microphoneStream) { // Stop existing stream if any
+    if (microphoneStream) {
         microphoneStream.getTracks().forEach(track => track.stop());
     }
 
@@ -174,12 +183,9 @@ function startAudioMonitoring(stream) {
             sum += dataArray[i];
         }
         const average = sum / dataArray.length;
-        const normalizedVolume = average / 255; // Normalize to 0-1
+        const normalizedVolume = average / 255;
 
         if (normalizedVolume > AUDIO_VOLUME_THRESHOLD) {
-            // console.log("High audio detected:", normalizedVolume);
-            // Optionally, implement a grace period for audio anomalies
-            // startProctoringGracePeriod("Unusual audio detected. Please ensure a quiet environment.");
             sendProctoringLogCallback('audio_anomaly', { volume: normalizedVolume, timestamp: Date.now() });
         }
         requestAnimationFrame(checkAudio);
@@ -199,12 +205,10 @@ async function detectFaces() {
         const predictions = await proctoringModel.estimateFaces(proctoringVideoElement, false);
         proctoringContext.clearRect(0, 0, proctoringCanvasElement.width, proctoringCanvasElement.height);
 
-        // Webcam Tampering Detection
         if (proctoringVideoElement.videoWidth === 0 || proctoringVideoElement.videoHeight === 0 || proctoringVideoElement.paused || proctoringVideoElement.ended) {
             startProctoringGracePeriod("Webcam stream is unavailable or paused.");
             sendProctoringLogCallback('webcam_tampering', 'Webcam stream is not active.');
         } else {
-            // Check if there's actual video data flowing (simple check, can be improved)
             const currentTime = Date.now();
             if (proctoringVideoElement.currentTime !== proctoringVideoElement._prevTime) {
                 lastCameraActivityTimestamp = currentTime;
@@ -220,7 +224,7 @@ async function detectFaces() {
             startProctoringGracePeriod("No face detected in camera feed.");
         } else if (predictions.length === 1) {
             proctoringFaceCountDisplay.textContent = "1 face detected";
-            clearProctoringGracePeriod(); // Clear grace period if conditions are met
+            clearProctoringGracePeriod();
             proctoringContext.strokeStyle = '#00FF00';
             proctoringContext.lineWidth = 4;
             proctoringContext.fillStyle = 'rgba(0, 255, 0, 0.1)';
@@ -236,13 +240,10 @@ async function detectFaces() {
                     prediction.landmarks.forEach(landmark => {
                         proctoringContext.fillRect(landmark[0], landmark[1], 4, 4);
                     });
-                    // Basic Head Pose Estimation (simplified, more complex with pose models)
-                    // For example, checking if nose landmark is far from center of face bounding box
-                    const nose = prediction.landmarks[2]; // Assuming landmark[2] is roughly the nose
+                    const nose = prediction.landmarks[2];
                     const faceCenterX = start[0] + size[0] / 2;
-                    const headTurnThreshold = 50; // Pixels
+                    const headTurnThreshold = 50;
                     if (Math.abs(nose[0] - faceCenterX) > headTurnThreshold) {
-                        // startProctoringGracePeriod("Excessive head movement detected (looking away).");
                         sendProctoringLogCallback('head_pose_anomaly', 'User is likely looking away from the screen.');
                     }
                 }
@@ -252,14 +253,7 @@ async function detectFaces() {
             startProctoringGracePeriod("More than one face detected. Only one person is allowed.");
         }
 
-        // Multiple Monitor Detection (simplified, relies on screen properties)
         if (window.screen.width > window.innerWidth || window.screen.height > window.innerHeight) {
-            // This is a rough heuristic. A more robust solution might involve OS-level APIs or browser extensions.
-            // For web, this mostly indicates if the browser window isn't maximized on a single screen.
-            // It could also be triggered by non-maximized windows.
-            // A more direct way would be to check `screen.availWidth` and `screen.availHeight` against `window.outerWidth` and `window.outerHeight`.
-            // For now, let's keep it simple as an indicator.
-            // startProctoringGracePeriod("Multiple monitors or unusual display setup detected.");
             sendProctoringLogCallback('multiple_monitor_detected', 'Potential multiple monitor setup detected.');
         }
 
@@ -278,12 +272,11 @@ async function detectFaces() {
 function startProctoringGracePeriod(reason) {
     if (proctoringErrorTriggered || proctoringFullscreenPromptOverlay.classList.contains('active')) return;
 
-    // Only start a new grace period if the reason is different or no timer is active
     if (proctoringGracePeriodTimer && proctoringGracePeriodReason === reason) {
         return;
     }
 
-    clearProctoringGracePeriod(); // Clear any existing timer for a new reason
+    clearProctoringGracePeriod();
 
     proctoringGracePeriodReason = reason;
     proctoringGracePeriodSeconds = PROCTORING_GRACE_PERIOD_DURATION_SECONDS;
@@ -354,6 +347,15 @@ function clearFullscreenCountdown() {
     }
 }
 
+function showProctoringAutoSubmitModal(message) {
+    proctoringAutoSubmitMessage.textContent = message;
+    proctoringAutoSubmitModalOverlay.classList.add('active');
+}
+
+function hideProctoringAutoSubmitModal() {
+    proctoringAutoSubmitModalOverlay.classList.remove('active');
+}
+
 function updateProctoringConditions() {
     if (proctoringErrorTriggered || !proctoringInitialized) return;
 
@@ -368,9 +370,8 @@ function updateProctoringConditions() {
             proctoringDetectionActive = true;
             updateProctoringStatus("All conditions met. Proctoring active.", 'success');
             onProctoringConditionsMetCallback();
-            detectFaces(); // Start detection loop
+            detectFaces();
             sendProctoringLogCallback('proctoring_started_or_resumed', 'All proctoring conditions are met.');
-            // Start idle detection when proctoring is active
             startIdleDetection();
         } else {
             updateProctoringStatus("All conditions met. Proctoring active.", 'success');
@@ -384,7 +385,6 @@ function updateProctoringConditions() {
         if (proctoringDetectionActive) {
             proctoringDetectionActive = false;
             proctoringContext.clearRect(0, 0, proctoringCanvasElement.width, proctoringCanvasElement.height);
-            // Stop idle detection when proctoring is not active
             stopIdleDetection();
         }
         onProctoringConditionsViolatedCallback();
@@ -397,8 +397,7 @@ function updateProctoringConditions() {
                 startAssessmentOverlay.classList.add('hidden');
             }
         } else if (!isTabVisible) {
-            updateProctoringStatus("You left the assessment tab. Please return to continue.", 'warning');
-            startProctoringGracePeriod("You left the assessment tab.");
+            // Tab switch handling moved to handleVisibilityChange to ensure immediate action
             if (startAssessmentOverlay) {
                 startAssessmentOverlay.classList.add('hidden');
             }
@@ -429,7 +428,6 @@ function triggerProctoringCriticalError(message) {
     if (proctoringVideoElement && proctoringVideoElement.srcObject) {
         proctoringVideoElement.srcObject.getTracks().forEach(track => track.stop());
     }
-    // Stop audio context if active
     if (audioContext) {
         audioContext.close();
         audioContext = null;
@@ -443,7 +441,7 @@ function triggerProctoringCriticalError(message) {
     clearProctoringGracePeriod();
     clearFullscreenCountdown();
     hideProctoringFullscreenPrompt();
-    stopIdleDetection(); // Stop idle detection
+    stopIdleDetection();
 
     updateProctoringStatus(`Critical Error: ${message}`, 'error');
     showProctoringErrorModal(`Your assessment session has been terminated. Reason: ${message}`);
@@ -514,7 +512,7 @@ function handleFullscreenChange() {
     const footers = document.querySelectorAll('footer, .footer');
     if (document.fullscreenElement) {
         headers.forEach(el => el.style.display = 'none');
-        footers.forEach(el => el.style.display = 'none');
+        footers.forEach(el => el.style.display = '');
     } else {
         headers.forEach(el => el.style.display = '');
         footers.forEach(el => el.style.display = '');
@@ -523,18 +521,38 @@ function handleFullscreenChange() {
 }
 
 function handleVisibilityChange() {
-    if (!document.hidden && isFullscreenCountdownActive) {
-        clearFullscreenCountdown();
+    if (!document.hidden) {
+        if (isFullscreenCountdownActive) {
+            clearFullscreenCountdown();
+        }
+        // Clear tab switch grace period when returning to the tab
+        if (proctoringGracePeriodReason.includes("You left the assessment tab")) {
+            clearProctoringGracePeriod();
+        }
+        updateProctoringConditions();
+    } else {
+        // Always trigger a new grace period on tab switch
+        tabSwitchCount++;
+        sendProctoringLogCallback('tab_switch', { count: tabSwitchCount, max: MAX_TAB_SWITCHES });
+        updateProctoringStatus(`You left the assessment tab (${tabSwitchCount}/${MAX_TAB_SWITCHES}). Please stay on this tab.`, 'warning');
+        if (tabSwitchCount >= MAX_TAB_SWITCHES) {
+            const assessmentForm = document.querySelector('form');
+            if (assessmentForm) {
+                showProctoringAutoSubmitModal(`Your assessment has been automatically submitted due to excessive tab switches (${MAX_TAB_SWITCHES} times). Please acknowledge to continue.`);
+                assessmentForm.submit();
+                sendProctoringLogCallback('form_submitted', 'Form submitted due to excessive tab switches.');
+            } else {
+                triggerProctoringCriticalError("Assessment form not found for submission after excessive tab switches.");
+            }
+        } else {
+            startProctoringGracePeriod("You left the assessment tab.");
+        }
     }
-    updateProctoringConditions();
 }
 
-// NEW FEATURE: Activity Detection (Idle)
 let idleDetectionInterval = null;
 function recordActivity() {
     lastActivityTimestamp = Date.now();
-    // console.log("Activity recorded:", lastActivityTimestamp);
-    // If a grace period for inactivity was active, clear it
     if (proctoringGracePeriodReason.includes("No activity")) {
         clearProctoringGracePeriod();
     }
@@ -548,7 +566,7 @@ function startIdleDetection() {
             startProctoringGracePeriod(`No activity detected for ${INACTIVITY_THRESHOLD_SECONDS} seconds.`);
             sendProctoringLogCallback('idle_detected', { duration: INACTIVITY_THRESHOLD_SECONDS });
         }
-    }, 5000); // Check every 5 seconds
+    }, 5000);
 }
 
 function stopIdleDetection() {
@@ -558,15 +576,9 @@ function stopIdleDetection() {
     }
 }
 
-// NEW FEATURE: Copy/Paste Prevention (Conceptual for web)
 function handleCopyAttempt(event) {
-    // Prevent default copy behavior if desired for high-security exams.
-    // However, this can be circumvented, and it's generally better to flag.
-    // event.preventDefault();
-    // proctoringShowCustomMessageBox("Copying Not Allowed", "Copying content from the assessment is not permitted.");
     sendProctoringLogCallback('copy_attempt', 'User attempted to copy content.');
     startProctoringGracePeriod("Copying content is not allowed.");
 }
-
 
 window.initProctoring = initProctoring;

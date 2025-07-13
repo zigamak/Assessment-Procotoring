@@ -25,15 +25,15 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
     $quiz_id = sanitize_input($_GET['quiz_id']);
 
     try {
-        // Fetch quiz details. Ensure it's not a public quiz if we are in logged_in_quiz.php,
-        // although an admin can also assign public quizzes to logged in users if desired.
-        // For strict separation, we check is_public = 0 here for logged-in quizzes.
-        $stmt = $pdo->prepare("SELECT quiz_id, title, description, is_public, max_attempts, duration_minutes FROM quizzes WHERE quiz_id = :quiz_id AND is_public = 0");
+        // Fetch quiz details.
+        // REMOVED 'AND is_public = 0' as 'is_public' column no longer exists in quizzes table.
+        // Assuming quizzes accessible via this page are intended for logged-in students.
+        $stmt = $pdo->prepare("SELECT quiz_id, title, description, max_attempts, duration_minutes, is_paid, assessment_fee FROM quizzes WHERE quiz_id = :quiz_id");
         $stmt->execute(['quiz_id' => $quiz_id]);
         $quiz = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$quiz) {
-            $message = display_message("Quiz not found or is not accessible for logged-in users.", "error");
+            $message = display_message("Quiz not found or is not accessible.", "error");
         } else {
             // Check student eligibility for the quiz (max attempts)
             $stmt_attempts_count = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = :user_id AND quiz_id = :quiz_id");
@@ -47,7 +47,7 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
                 // Fetch questions for the quiz, randomize them
                 $stmt = $pdo->prepare("
                     SELECT q.question_id, q.question_text, q.question_type, q.score, q.image_url,
-                           GROUP_CONCAT(CONCAT(o.option_id, '||', o.option_text) SEPARATOR ';;') as options_data
+                            GROUP_CONCAT(CONCAT(o.option_id, '||', o.option_text) SEPARATOR ';;') as options_data
                     FROM questions q
                     LEFT JOIN options o ON q.question_id = o.question_id
                     WHERE q.quiz_id = :quiz_id
@@ -102,21 +102,17 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
 }
 ?>
 
-<!-- Include TensorFlow.js and BlazeFace Model -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
-<!-- Include Proctoring CSS -->
 <link rel="stylesheet" href="<?php echo BASE_URL; ?>public/css/proctoring.css">
 
 <div class="container mx-auto p-4 py-8">
     <?php echo $message; // Display any feedback messages ?>
 
     <?php if ($quiz && $quiz_data_loaded): ?>
-        <!-- Proctoring Section (Always visible at the top) -->
         <?php include '../public/html/proctoring_widget.html'; ?>
 
-        <!-- Quiz Section (Initially hidden, enabled by proctoring.js) -->
         <div id="quizContent" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-md mb-8">
                 <h1 class="text-3xl font-bold text-theme-color mb-4"><?php echo htmlspecialchars($quiz['title']); ?></h1>
@@ -142,12 +138,10 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
                 <form id="quizForm" action="<?php echo BASE_URL; ?>quiz/process_quiz.php" method="POST" class="space-y-8">
                     <input type="hidden" name="quiz_id" value="<?php echo htmlspecialchars($quiz['quiz_id']); ?>">
                     <input type="hidden" name="attempt_id" value="<?php echo htmlspecialchars($current_attempt_id); ?>">
-                    <input type="hidden" name="is_public_quiz" value="0">
                     <input type="hidden" id="current-question-index" value="0">
                     <input type="hidden" id="questions-data" value="<?php echo htmlspecialchars(json_encode($questions), ENT_QUOTES, 'UTF-8'); ?>">
 
                     <div id="question-container" class="bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-200">
-                        <!-- Question will be loaded here by JavaScript -->
                         <p class="text-center text-gray-600">Loading question...</p>
                     </div>
 
@@ -181,9 +175,9 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
     <?php endif; ?>
 </div>
 
-<!-- Include Proctoring JavaScript -->
 <script src="<?php echo BASE_URL; ?>public/js/proctoring.js"></script>
-<script>// --- Quiz-specific JavaScript (controls rendering and timer) ---
+<script>
+// --- Quiz-specific JavaScript (controls rendering and timer) ---
 const quizData = JSON.parse(document.getElementById('questions-data')?.value || '[]');
 let currentQuestionIndex = parseInt(document.getElementById('current-question-index')?.value || '0');
 const questionContainer = document.getElementById('question-container');
@@ -203,6 +197,10 @@ const quizTimerDisplay = document.getElementById('quiz-timer');
 // Store student's answers (keyed by question_id)
 const studentAnswers = {};
 
+/**
+ * Renders the question at the given index in the quiz.
+ * @param {number} index - The index of the question to render.
+ */
 function renderQuestion(index) {
     if (index < 0 || index >= quizData.length) {
         console.error('Invalid question index:', index);
@@ -284,6 +282,9 @@ function renderQuestion(index) {
     });
 }
 
+/**
+ * Updates the state of the navigation buttons (Previous, Next, Submit).
+ */
 function updateNavigationButtons() {
     prevBtn.disabled = currentQuestionIndex === 0;
     nextBtn.disabled = currentQuestionIndex === quizData.length - 1;
@@ -297,6 +298,9 @@ function updateNavigationButtons() {
     }
 }
 
+/**
+ * Updates the current question number display.
+ */
 function updateQuestionNumber() {
     currentQuestionNumberSpan.textContent = currentQuestionIndex + 1;
     totalQuestionsSpan.textContent = quizData.length;
@@ -318,8 +322,12 @@ nextBtn?.addEventListener('click', () => {
 });
 
 // --- Quiz Timer Logic ---
+/**
+ * Starts the quiz countdown timer.
+ */
 function startQuizTimer() {
-    if (quizDurationMinutes > 0 && !timerInterval) { // Only start if duration > 0 and not already running
+    // Only start if duration > 0, timer not already running, and time remaining is positive
+    if (quizDurationMinutes > 0 && !timerInterval && timeRemainingSeconds > 0) {
         timerInterval = setInterval(() => {
             timeRemainingSeconds--;
             if (quizTimerDisplay) {
@@ -330,10 +338,15 @@ function startQuizTimer() {
 
             if (timeRemainingSeconds <= 0) {
                 clearInterval(timerInterval);
-                // Time's up, automatically submit the quiz
-                proctoringShowCustomMessageBox('Time is up!', 'Your quiz will be submitted automatically.', () => {
+                // Time's up, automatically submit the quiz using the global proctoring message box
+                if (typeof proctoringShowCustomMessageBox !== 'undefined') {
+                    proctoringShowCustomMessageBox('Time is up!', 'Your quiz will be submitted automatically.', () => {
+                        submitQuizForm();
+                    });
+                } else {
+                    alert('Time is up! Your quiz will be submitted automatically.');
                     submitQuizForm();
-                });
+                }
             }
         }, 1000);
     }
@@ -341,6 +354,9 @@ function startQuizTimer() {
 
 
 // --- Form Submission Logic ---
+/**
+ * Collects all answers and submits the quiz form.
+ */
 function submitQuizForm() {
     // Prevent multiple submissions if already in progress
     if (quizForm.hasAttribute('data-submitted') && quizForm.getAttribute('data-submitted') === 'true') {
@@ -374,6 +390,10 @@ quizForm?.addEventListener('submit', (event) => {
 const attemptId = <?php echo json_encode($current_attempt_id); ?>;
 const userId = <?php echo json_encode($user_id); ?>;
 
+/**
+ * Callback function executed when proctoring conditions are met.
+ * Enables quiz interaction and starts the timer.
+ */
 function onProctoringConditionsMet() {
     if (quizContentDiv.classList.contains('hidden')) { // Only show once
         quizContentDiv.classList.remove('hidden');
@@ -409,6 +429,10 @@ function onProctoringConditionsMet() {
     }
 }
 
+/**
+ * Callback function executed when proctoring conditions are violated.
+ * Disables quiz interaction.
+ */
 function onProctoringConditionsViolated() {
     // Disable quiz form inputs
     quizForm.querySelectorAll('input, textarea, button').forEach(el => {
@@ -416,12 +440,16 @@ function onProctoringConditionsViolated() {
     });
     quizForm.style.opacity = '0.5';
     quizForm.style.pointerEvents = 'none';
-    // Removed: clearInterval(timerInterval); // This line was removed as requested.
 
     // Remove fullscreen styles from body
     document.body.classList.remove('assessment-fullscreen');
 }
 
+/**
+ * Callback function executed when a critical proctoring error occurs.
+ * Terminates the quiz and submits it.
+ * @param {string} message - The error message.
+ */
 function onProctoringCriticalError(message) {
     // Stop everything, quiz is terminated
     clearInterval(timerInterval); // Timer stops on critical error/termination
@@ -454,6 +482,11 @@ function onProctoringCriticalError(message) {
     }
 }
 
+/**
+ * Sends proctoring log data to the server.
+ * @param {string} eventType - The type of proctoring event.
+ * @param {object} [data=null] - Additional data for the log.
+ */
 async function sendProctoringLog(eventType, data = null) {
     // Convert the data to a string if it's an object/array, for simpler storage in 'log_data' TEXT field
     const logDataString = typeof data === 'object' ? JSON.stringify(data) : String(data);
@@ -483,30 +516,14 @@ async function sendProctoringLog(eventType, data = null) {
     }
 }
 
-// Custom message box for quiz timer (re-used from proctoring.js)
-function proctoringShowCustomMessageBox(title, message, callback = null) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active'; // Re-use modal-overlay styling
-    modal.innerHTML = `
-            <div class="modal-content">
-                <h3 class="modal-title">${title}</h3>
-                <p class="modal-message">${message}</p>
-                <button class="modal-button primary-button" id="quizMsgBoxOkBtn">OK</button>
-            </div>
-        `;
-    document.body.appendChild(modal);
+// REMOVED DUPLICATED proctoringShowCustomMessageBox FUNCTION
+// It is now expected to be provided by proctoring.js and available globally via window.proctoringShowCustomMessageBox.
 
-    document.getElementById('quizMsgBoxOkBtn').onclick = () => {
-        modal.remove();
-        if (callback) {
-            callback();
-        }
-    };
-}
 
 // --- Main Page Initialization ---
 window.addEventListener('DOMContentLoaded', () => {
     // Initialize proctoring system
+    // Ensure proctoring.js is loaded BEFORE this script executes DOMContentLoaded
     if (typeof initProctoring !== 'undefined') {
         initProctoring({
             onConditionsMet: onProctoringConditionsMet,
@@ -516,7 +533,8 @@ window.addEventListener('DOMContentLoaded', () => {
         });
     } else {
         console.error("proctoring.js not loaded or initProctoring function not found.");
-        onProctoringCriticalError("Proctoring system failed to initialize. Cannot start assessment.");
+        // If proctoring can't start, a critical error is triggered
+        onProctoringCriticalError("Proctoring system failed to initialize. Cannot start assessment. Please refresh.");
     }
 
     // Initially render first question (or placeholder) if quiz data is loaded
@@ -544,7 +562,9 @@ window.onbeforeunload = function() {
 
     // Proctoring.js should handle its own camera/interval cleanup.
     // Log that the user left the quiz if not submitted
-    if (attemptId && !quizForm.hasAttribute('data-submitted')) {
+    // Check for `typeof sendProctoringLog !== 'undefined'` to ensure the function exists
+    // before calling it, especially during a messy page unload.
+    if (attemptId && !quizForm.hasAttribute('data-submitted') && typeof sendProctoringLog !== 'undefined') {
         sendProctoringLog('page_leave', 'User navigated away from the quiz page during attempt.');
     }
 };

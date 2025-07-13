@@ -1,6 +1,6 @@
 <?php
 // admin/manage_quizzes.php
-// Page to create, edit, and delete quizzes.
+// Page to create, edit, and delete quizzes, now with payment options.
 
 require_once '../includes/session.php';
 require_once '../includes/db.php';
@@ -21,23 +21,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'add_quiz':
                 $title = sanitize_input($_POST['title'] ?? '');
                 $description = sanitize_input($_POST['description'] ?? '');
-                $is_public = isset($_POST['is_public']) ? 1 : 0;
+                // Removed $is_public
                 $max_attempts = sanitize_input($_POST['max_attempts'] ?? 0);
                 // Convert empty string duration to NULL for DB
                 $duration_minutes = !empty($_POST['duration_minutes']) ? sanitize_input($_POST['duration_minutes']) : NULL;
                 $created_by = getUserId(); // Current logged-in admin's ID
 
+                // New fields for payment
+                $is_paid = isset($_POST['is_paid']) ? 1 : 0;
+                // If not paid, ensure fee is NULL or 0.00
+                $assessment_fee = ($is_paid && !empty($_POST['assessment_fee'])) ? sanitize_input($_POST['assessment_fee']) : NULL;
+                if ($is_paid && ($assessment_fee === NULL || !is_numeric($assessment_fee) || $assessment_fee < 0)) {
+                    $message = display_message("Assessment fee is required and must be a valid positive number if the quiz is paid.", "error");
+                    break; // Exit switch case
+                }
+
                 if (empty($title)) {
                     $message = display_message("Quiz title is required.", "error");
                 } else {
                     try {
-                        $stmt = $pdo->prepare("INSERT INTO quizzes (title, description, is_public, max_attempts, duration_minutes, created_by) VALUES (:title, :description, :is_public, :max_attempts, :duration_minutes, :created_by)");
+                        // Removed is_public from INSERT query
+                        $stmt = $pdo->prepare("INSERT INTO quizzes (title, description, max_attempts, duration_minutes, is_paid, assessment_fee, created_by) VALUES (:title, :description, :max_attempts, :duration_minutes, :is_paid, :assessment_fee, :created_by)");
                         if ($stmt->execute([
                             'title' => $title,
                             'description' => $description,
-                            'is_public' => $is_public,
+                            // Removed 'is_public' => $is_public,
                             'max_attempts' => $max_attempts,
                             'duration_minutes' => $duration_minutes,
+                            'is_paid' => $is_paid,
+                            'assessment_fee' => $assessment_fee,
                             'created_by' => $created_by
                         ])) {
                             $message = display_message("Quiz added successfully!", "success");
@@ -55,22 +67,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $quiz_id = sanitize_input($_POST['quiz_id'] ?? 0);
                 $title = sanitize_input($_POST['title'] ?? '');
                 $description = sanitize_input($_POST['description'] ?? '');
-                $is_public = isset($_POST['is_public']) ? 1 : 0;
+                // Removed $is_public
                 $max_attempts = sanitize_input($_POST['max_attempts'] ?? 0);
                 // Convert empty string duration to NULL for DB
                 $duration_minutes = !empty($_POST['duration_minutes']) ? sanitize_input($_POST['duration_minutes']) : NULL;
+
+                // New fields for payment
+                $is_paid = isset($_POST['is_paid']) ? 1 : 0;
+                // If not paid, ensure fee is NULL or 0.00
+                $assessment_fee = ($is_paid && !empty($_POST['assessment_fee'])) ? sanitize_input($_POST['assessment_fee']) : NULL;
+                if ($is_paid && ($assessment_fee === NULL || !is_numeric($assessment_fee) || $assessment_fee < 0)) {
+                    $message = display_message("Assessment fee is required and must be a valid positive number if the quiz is paid.", "error");
+                    break; // Exit switch case
+                }
 
                 if (empty($quiz_id) || empty($title)) {
                     $message = display_message("Quiz ID and title are required to edit.", "error");
                 } else {
                     try {
-                        $stmt = $pdo->prepare("UPDATE quizzes SET title = :title, description = :description, is_public = :is_public, max_attempts = :max_attempts, duration_minutes = :duration_minutes WHERE quiz_id = :quiz_id");
+                        // Removed is_public from UPDATE query
+                        $stmt = $pdo->prepare("UPDATE quizzes SET title = :title, description = :description, max_attempts = :max_attempts, duration_minutes = :duration_minutes, is_paid = :is_paid, assessment_fee = :assessment_fee WHERE quiz_id = :quiz_id");
                         if ($stmt->execute([
                             'title' => $title,
                             'description' => $description,
-                            'is_public' => $is_public,
+                            // Removed 'is_public' => $is_public,
                             'max_attempts' => $max_attempts,
                             'duration_minutes' => $duration_minutes,
+                            'is_paid' => $is_paid,
+                            'assessment_fee' => $assessment_fee,
                             'quiz_id' => $quiz_id
                         ])) {
                             $message = display_message("Quiz updated successfully!", "success");
@@ -107,9 +131,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch all quizzes for display
+// Fetch all quizzes for display, including new payment fields
 try {
-    $stmt = $pdo->query("SELECT quiz_id, title, description, is_public, max_attempts, duration_minutes, created_at FROM quizzes ORDER BY created_at DESC");
+    // Removed is_public from SELECT query
+    $stmt = $pdo->query("SELECT quiz_id, title, description, max_attempts, duration_minutes, is_paid, assessment_fee, created_at FROM quizzes ORDER BY created_at DESC");
     $quizzes = $stmt->fetchAll();
 } catch (PDOException $e) {
     error_log("Fetch Quizzes Error: " . $e->getMessage());
@@ -153,10 +178,18 @@ try {
                 <input type="number" id="add_duration_minutes" name="duration_minutes" min="1"
                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
             </div>
-            <div class="md:col-span-2 flex items-center">
-                <input type="checkbox" id="add_is_public" name="is_public" value="1"
-                       class="form-checkbox h-5 w-5 text-green-600">
-                <label for="add_is_public" class="ml-2 text-gray-700">Public Quiz (No Login Required)</label>
+            <div class="md:col-span-2">
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="add_is_paid" name="is_paid" value="1"
+                           class="form-checkbox h-5 w-5 text-indigo-600">
+                    <label for="add_is_paid" class="ml-2 text-gray-700">Requires Payment</label>
+                </div>
+                <div id="add_assessment_fee_group" class="hidden">
+                    <label for="add_assessment_fee" class="block text-gray-700 text-sm font-bold mb-2">Assessment Fee (NGN):</label>
+                    <input type="number" id="add_assessment_fee" name="assessment_fee" step="0.01" min="0"
+                           class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-indigo-500"
+                           placeholder="e.g., 1500.00">
+                </div>
             </div>
             <div class="md:col-span-2">
                 <button type="submit"
@@ -181,9 +214,10 @@ try {
                     <tr>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Public</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attempts</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paid</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fee</th>
                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
@@ -192,9 +226,12 @@ try {
                     <tr>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($quiz['quiz_id']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($quiz['title']); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $quiz['is_public'] ? 'Yes' : 'No'; ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($quiz['max_attempts']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($quiz['duration_minutes'] ?: 'No Limit'); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $quiz['is_paid'] ? 'Yes' : 'No'; ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <?php echo $quiz['is_paid'] && $quiz['assessment_fee'] !== null ? '₦' . number_format($quiz['assessment_fee'], 2) : 'N/A'; ?>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <button onclick="openEditQuizModal(<?php echo htmlspecialchars(json_encode($quiz)); ?>)"
                                     class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
@@ -240,10 +277,18 @@ try {
                 <input type="number" id="edit_duration_minutes" name="duration_minutes" min="1"
                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
             </div>
-            <div class="flex items-center">
-                <input type="checkbox" id="edit_is_public" name="is_public" value="1"
-                       class="form-checkbox h-5 w-5 text-green-600">
-                <label for="edit_is_public" class="ml-2 text-gray-700">Public Quiz (No Login Required)</label>
+            <div>
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="edit_is_paid" name="is_paid" value="1"
+                           class="form-checkbox h-5 w-5 text-indigo-600">
+                    <label for="edit_is_paid" class="ml-2 text-gray-700">Requires Payment</label>
+                </div>
+                <div id="edit_assessment_fee_group" class="hidden">
+                    <label for="edit_assessment_fee" class="block text-gray-700 text-sm font-bold mb-2">Assessment Fee (NGN):</label>
+                    <input type="number" id="edit_assessment_fee" name="assessment_fee" step="0.01" min="0"
+                           class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-indigo-500"
+                           placeholder="e.g., 1500.00">
+                </div>
             </div>
             <div class="flex justify-end space-x-4 mt-6">
                 <button type="button" onclick="closeEditQuizModal()"
@@ -268,7 +313,29 @@ try {
         document.getElementById('edit_max_attempts').value = quiz.max_attempts;
         // Ensure that if duration_minutes is null, it displays as empty string
         document.getElementById('edit_duration_minutes').value = quiz.duration_minutes !== null ? quiz.duration_minutes : '';
-        document.getElementById('edit_is_public').checked = quiz.is_public == 1;
+
+        // Populate payment fields for edit modal
+        const editIsPaidCheckbox = document.getElementById('edit_is_paid');
+        const editAssessmentFeeInput = document.getElementById('edit_assessment_fee');
+        const editAssessmentFeeGroup = document.getElementById('edit_assessment_fee_group');
+
+        // Removed public quiz checkbox logic
+        // document.getElementById('edit_is_public').checked = quiz.is_public == 1;
+
+        editIsPaidCheckbox.checked = quiz.is_paid == 1;
+        // If assessment_fee is stored as NULL, display as empty string
+        editAssessmentFeeInput.value = quiz.assessment_fee !== null ? parseFloat(quiz.assessment_fee).toFixed(2) : '';
+
+        // Trigger visibility for fee input based on is_paid status
+        if (quiz.is_paid == 1) {
+            editAssessmentFeeGroup.classList.remove('hidden');
+            editAssessmentFeeInput.setAttribute('required', 'required'); // Make it required when visible
+        } else {
+            editAssessmentFeeGroup.classList.add('hidden');
+            editAssessmentFeeInput.removeAttribute('required'); // Not required when hidden
+        }
+
+
         document.getElementById('editQuizModal').classList.remove('hidden');
     }
 
@@ -280,6 +347,55 @@ try {
     document.getElementById('toggleAddQuizForm').addEventListener('click', function() {
         const addQuizForm = document.getElementById('addQuizForm');
         addQuizForm.classList.toggle('hidden');
+    });
+
+    // --- JavaScript for conditional display of Assessment Fee ---
+
+    // For Add Quiz Form
+    document.addEventListener('DOMContentLoaded', function() {
+        const addIsPaidCheckbox = document.getElementById('add_is_paid');
+        const addAssessmentFeeGroup = document.getElementById('add_assessment_fee_group');
+        const addAssessmentFeeInput = document.getElementById('add_assessment_fee');
+
+        function toggleAddAssessmentFeeVisibility() {
+            if (addIsPaidCheckbox.checked) {
+                addAssessmentFeeGroup.classList.remove('hidden');
+                addAssessmentFeeInput.setAttribute('required', 'required');
+            } else {
+                addAssessmentFeeGroup.classList.add('hidden');
+                addAssessmentFeeInput.removeAttribute('required');
+                addAssessmentFeeInput.value = ''; // Clear value when hidden
+            }
+        }
+
+        addIsPaidCheckbox.addEventListener('change', toggleAddAssessmentFeeVisibility);
+        // Initial call in case the checkbox is checked by default (though not in this code)
+        toggleAddAssessmentFeeVisibility();
+
+
+        // For Edit Quiz Modal (attach event listener when modal is shown or on page load)
+        const editIsPaidCheckbox = document.getElementById('edit_is_paid');
+        const editAssessmentFeeGroup = document.getElementById('edit_assessment_fee_group');
+        const editAssessmentFeeInput = document.getElementById('edit_assessment_fee');
+
+        function toggleEditAssessmentFeeVisibility() {
+            if (editIsPaidCheckbox.checked) {
+                editAssessmentFeeGroup.classList.remove('hidden');
+                editAssessmentFeeInput.setAttribute('required', 'required');
+            } else {
+                editAssessmentFeeGroup.classList.add('hidden');
+                editAssessmentFeeInput.removeAttribute('required');
+                editAssessmentFeeInput.value = ''; // Clear value when hidden
+            }
+        }
+
+        // Listener for the edit modal's checkbox
+        editIsPaidCheckbox.addEventListener('change', toggleEditAssessmentFeeVisibility);
+
+        // We also need to ensure the edit modal's fee field visibility is set correctly
+        // when openEditQuizModal() is called. This is already handled inside openEditQuizModal.
+        // The DOMContentLoaded listener ensures the function exists, but the actual toggle
+        // happens when `openEditQuizModal` is called for the edit button.
     });
 </script>
 

@@ -236,128 +236,138 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ?>
 
 <div class="container mx-auto p-4 py-8">
-    <h1 class="text-3xl font-bold text-theme-color mb-6">Your Profile</h1>
+    <h1 class="text-4xl font-extrabold text-gray-900 mb-8 text-center">Your Profile</h1>
 
     <?php echo $message; // Display any feedback messages ?>
 
     <?php if (!$verification_completed): ?>
-    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
-        <p class="font-bold">Important:</p>
-        <p>Please upload your passport/ID image and provide **City, State, and Country** to complete <a href="#upload-verification-form" class="font-bold underline">verification</a> before you can take any quizzes.</p>
+    <div class="bg-red-50 border-l-4 border-red-400 text-red-700 p-4 mb-6 rounded-md shadow-sm" role="alert">
+        <p class="font-bold text-lg">Verification Required!</p>
+        <p class="text-base">Please complete your profile verification by uploading your **passport/ID image** and providing **City, State, and Country**. Verification is mandatory to access quizzes.</p>
+        <p class="mt-2 text-sm">Scroll down to the <a href="#upload-verification-form" class="font-bold underline hover:text-red-900">"Upload Passport/ID Image & Verification Details"</a> section.</p>
     </div>
     <?php endif; ?>
 
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Profile Information</h2>
-        <div class="space-y-4">
-            <p class="text-gray-700"><strong class="font-semibold">Username:</strong> <?php echo $current_username; ?></p>
-            <p class="text-gray-700"><strong class="font-semibold">Email:</strong> <?php echo $current_email; ?></p>
-            <p class="text-gray-700"><strong class="font-semibold">City:</strong> <?php echo empty($current_city) ? 'N/A' : $current_city; ?></p>
-            <p class="text-gray-700"><strong class="font-semibold">State:</strong> <?php echo empty($current_state) ? 'N/A' : $current_state; ?></p>
-            <p class="text-gray-700"><strong class="font-semibold">Country:</strong> <?php echo empty($current_country) ? 'N/A' : $current_country; ?></p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">Personal Information</h2>
+            <div class="space-y-4 text-gray-700">
+                <p><strong class="font-semibold text-gray-900">Username:</strong> <span class="ml-2"><?php echo $current_username; ?></span></p>
+                <p><strong class="font-semibold text-gray-900">Email:</strong> <span class="ml-2"><?php echo $current_email; ?></span></p>
+                <p><strong class="font-semibold text-gray-900">City:</strong> <span class="ml-2"><?php echo empty($current_city) ? '<span class="text-red-500">Not Provided</span>' : $current_city; ?></span></p>
+                <p><strong class="font-semibold text-gray-900">State:</strong> <span class="ml-2"><?php echo empty($current_state) ? '<span class="text-red-500">Not Provided</span>' : $current_state; ?></span></p>
+                <p><strong class="font-semibold text-gray-900">Country:</strong> <span class="ml-2"><?php echo empty($current_country) ? '<span class="text-red-500">Not Provided</span>' : $current_country; ?></span></p>
 
+                <div class="pt-4 border-t mt-4">
+                    <p class="text-gray-700"><strong class="font-semibold text-gray-900">Verification Status:</strong></p>
+                    <?php if ($verification_completed): ?>
+                        <div class="flex items-center mt-2">
+                            <span class="text-green-600 font-bold text-lg flex items-center"><svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Completed</span>
+                        </div>
+                        <?php if (!empty($current_passport_image)): ?>
+                            <div class="mt-4">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-2">Uploaded Document:</h3>
+                                <img src="<?php echo BASE_URL . 'uploads/verification/' . $current_passport_image; ?>" alt="Passport/ID Image" class="mt-2 max-w-xs h-auto rounded-lg shadow-md border border-gray-300 object-cover">
+                            </div>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <div class="flex items-center mt-2">
+                            <span class="text-red-600 font-bold text-lg flex items-center"><svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Pending</span>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
 
-            <p class="text-gray-700">
-                <strong class="font-semibold">Verification Status:</strong>
-                <?php if ($verification_completed): ?>
-                    <span class="text-green-600 font-semibold">Completed</span>
-                    <br>
-                    <?php
-                    // Ensure BASE_URL is defined in your config or includes/functions.php
-                    // Example: define('BASE_URL', 'http://localhost/assessment/');
-                    // Note: Use 'uploads/verification/' for HTML src, not the server-side absolute $upload_dir
-                    ?>
-                    <img src="<?php echo BASE_URL . 'uploads/verification/' . $current_passport_image; ?>" alt="Passport/ID Image" class="mt-2 w-48 h-auto rounded shadow-md">
-                <?php else: ?>
-                    <span class="text-red-600 font-semibold">Pending</span>
-                <?php endif; ?>
-            </p>
+        <div class="space-y-8">
+            <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">Update Email Address</h2>
+                <form action="profile.php" method="POST" class="space-y-5">
+                    <input type="hidden" name="action" value="update_email">
+                    <div>
+                        <label for="email" class="block text-gray-800 text-sm font-semibold mb-2">New Email:</label>
+                        <input type="email" id="email" name="email" value="<?php echo $current_email; ?>" required
+                                class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200">
+                    </div>
+                    <div>
+                        <button type="submit"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:scale-105">
+                            Update Email
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">Change Password</h2>
+                <form action="profile.php" method="POST" class="space-y-5">
+                    <input type="hidden" name="action" value="change_password">
+                    <div>
+                        <label for="current_password" class="block text-gray-800 text-sm font-semibold mb-2">Current Password:</label>
+                        <input type="password" id="current_password" name="current_password" required
+                                class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition duration-200">
+                    </div>
+                    <div>
+                        <label for="new_password" class="block text-gray-800 text-sm font-semibold mb-2">New Password:</label>
+                        <input type="password" id="new_password" name="new_password" required
+                                class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition duration-200">
+                    </div>
+                    <div>
+                        <label for="confirm_new_password" class="block text-gray-800 text-sm font-semibold mb-2">Confirm New Password:</label>
+                        <input type="password" id="confirm_new_password" name="confirm_new_password" required
+                                class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition duration-200">
+                    </div>
+                    <div>
+                        <button type="submit"
+                                class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:scale-105">
+                            Change Password
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Update Email Address</h2>
-        <form action="profile.php" method="POST" class="space-y-4">
-            <input type="hidden" name="action" value="update_email">
-            <div>
-                <label for="email" class="block text-gray-700 text-sm font-bold mb-2">New Email:</label>
-                <input type="email" id="email" name="email" value="<?php echo $current_email; ?>" required
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
-            </div>
-            <div>
-                <button type="submit"
-                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
-                    Update Email
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-2xl font-semibold text-gray-800 mb-4">Change Password</h2>
-        <form action="profile.php" method="POST" class="space-y-4">
-            <input type="hidden" name="action" value="change_password">
-            <div>
-                <label for="current_password" class="block text-gray-700 text-sm font-bold mb-2">Current Password:</label>
-                <input type="password" id="current_password" name="current_password" required
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
-            </div>
-            <div>
-                <label for="new_password" class="block text-gray-700 text-sm font-bold mb-2">New Password:</label>
-                <input type="password" id="new_password" name="new_password" required
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
-            </div>
-            <div>
-                <label for="confirm_new_password" class="block text-gray-700 text-sm font-bold mb-2">Confirm New Password:</label>
-                <input type="password" id="confirm_new_password" name="confirm_new_password" required
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
-            </div>
-            <div>
-                <button type="submit"
-                        class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
-                    Change Password
-                </button>
-            </div>
-        </form>
-    </div>
-
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 id="upload-verification-form" class="text-2xl font-semibold text-gray-800 mb-4">Upload Passport/ID Image & Verification Details</h2>
-        <form action="profile.php" method="POST" enctype="multipart/form-data" class="space-y-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg border border-gray-200 mt-8">
+        <h2 id="upload-verification-form" class="text-2xl font-bold text-gray-800 mb-6 border-b pb-3">Upload Passport/ID Image & Verification Details</h2>
+        <form action="profile.php" method="POST" enctype="multipart/form-data" class="space-y-5">
             <input type="hidden" name="action" value="upload_passport_image">
 
             <div>
-                <label for="city" class="block text-gray-700 text-sm font-bold mb-2">City:</label>
+                <label for="city" class="block text-gray-800 text-sm font-semibold mb-2">City:</label>
                 <input type="text" id="city" name="city" value="<?php echo $current_city; ?>" required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
+                       class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200"
+                       placeholder="e.g., Lagos">
             </div>
 
             <div>
-                <label for="state" class="block text-gray-700 text-sm font-bold mb-2">State/Region:</label>
+                <label for="state" class="block text-gray-800 text-sm font-semibold mb-2">State/Region:</label>
                 <input type="text" id="state" name="state" value="<?php echo $current_state; ?>" required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
+                       class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200"
+                       placeholder="e.g., Lagos State">
             </div>
 
             <div>
-                <label for="country" class="block text-gray-700 text-sm font-bold mb-2">Country:</label>
+                <label for="country" class="block text-gray-800 text-sm font-semibold mb-2">Country:</label>
                 <input type="text" id="country" name="country" value="<?php echo $current_country; ?>" required
-                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-green-500">
+                       class="shadow-sm border border-gray-300 rounded-lg w-full py-2.5 px-4 text-gray-800 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200"
+                       placeholder="e.g., Nigeria">
             </div>
 
             <div>
-                <label for="passport_image" class="block text-gray-700 text-sm font-bold mb-2">Select Passport/ID Image:</label>
+                <label for="passport_image" class="block text-gray-800 text-sm font-semibold mb-2">Select Passport/ID Image:</label>
                 <input type="file" id="passport_image" name="passport_image" accept="image/*" required
-                       class="block w-full text-sm text-gray-700
-                             file:mr-4 file:py-2 file:px-4
+                       class="block w-full text-sm text-gray-800
+                             file:mr-4 file:py-2.5 file:px-4
                              file:rounded-full file:border-0
                              file:text-sm file:font-semibold
-                             file:bg-blue-50 file:text-blue-700
-                             hover:file:bg-blue-100">
-                <p class="text-xs text-gray-500 mt-1">Accepted formats: JPG, JPEG, PNG, GIF. Max size: 2MB.</p>
+                             file:bg-green-100 file:text-green-700
+                             hover:file:bg-green-200 cursor-pointer">
+                <p class="text-xs text-gray-500 mt-1">Accepted formats: JPG, JPEG, PNG, GIF. Maximum size: 2MB.</p>
             </div>
             <div>
                 <button type="submit"
-                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-300">
+                        class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition duration-300 ease-in-out transform hover:scale-105">
                     Submit Verification Details
                 </button>
             </div>

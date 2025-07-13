@@ -26,6 +26,19 @@ $current_attempt = null; // Object to hold detailed data for a single attempt vi
 // Ensure attempt_id is an integer if present, for strict type checking in queries
 $view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
 
+/**
+ * Calculates the percentage score.
+ * @param float $score The raw score obtained.
+ * @param float $max_score The maximum possible score for the quiz.
+ * @return float The percentage score, rounded to 2 decimal places.
+ */
+function calculate_percentage($score, $max_score) {
+    if ($max_score <= 0) {
+        return 0; // Avoid division by zero
+    }
+    return round(($score / $max_score) * 100, 2);
+}
+
 // Main logic to fetch either overview or detailed attempt
 if ($view_attempt_id) {
     // Detailed View Logic
@@ -34,7 +47,8 @@ if ($view_attempt_id) {
         $stmt = $pdo->prepare("
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
-                q.title as quiz_title, q.description as quiz_description
+                q.title as quiz_title, q.description as quiz_description,
+                (SELECT SUM(score) FROM questions WHERE quiz_id = q.quiz_id) as max_possible_score
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.quiz_id
             WHERE qa.attempt_id = :attempt_id AND qa.user_id = :user_id
@@ -43,6 +57,13 @@ if ($view_attempt_id) {
         $current_attempt = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($current_attempt) {
+            // Calculate percentage for the detailed view
+            if ($current_attempt['is_completed']) {
+                $current_attempt['percentage_score'] = calculate_percentage($current_attempt['score'], $current_attempt['max_possible_score']);
+            } else {
+                $current_attempt['percentage_score'] = 'N/A';
+            }
+
             // Fetch answers for this attempt
             try {
                 $stmt_answers = $pdo->prepare("
@@ -67,9 +88,6 @@ if ($view_attempt_id) {
                 $current_attempt['answers'] = []; // Ensure it's an empty array if fetching fails
             }
 
-            // Proctoring logs are for administrators only, so no fetching or displaying here.
-            // Removed related code.
-
         } else {
             $message = display_message("Attempt not found or you do not have permission to view it.", "error");
             // If attempt isn't found/permission denied, set $view_attempt_id to null
@@ -91,14 +109,26 @@ if (!$view_attempt_id) {
         $stmt = $pdo->prepare("
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
-                q.title as quiz_title
+                q.title as quiz_title,
+                (SELECT SUM(score) FROM questions WHERE quiz_id = q.quiz_id) as max_possible_score
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.quiz_id
             WHERE qa.user_id = :user_id
             ORDER BY qa.start_time DESC
         ");
         $stmt->execute(['user_id' => $user_id]);
-        $attempts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $attempts_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Process attempts to add percentage
+        foreach ($attempts_raw as $attempt) {
+            if ($attempt['is_completed']) {
+                $attempt['percentage_score'] = calculate_percentage($attempt['score'], $attempt['max_possible_score']);
+            } else {
+                $attempt['percentage_score'] = 'N/A';
+            }
+            $attempts[] = $attempt;
+        }
+
     } catch (PDOException $e) {
         error_log("Student View History (Overview) Error: " . $e->getMessage());
         $message = display_message("An error occurred while fetching your quiz history overview. Please try again later.", "error");
@@ -120,7 +150,8 @@ if (!$view_attempt_id) {
                 <p><strong>Started:</strong> <?php echo date('g:i A, F j, Y', strtotime($current_attempt['start_time'])); ?></p>
                 <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'N/A'; ?></p>
                 <p><strong>Status:</strong> <?php echo $current_attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></p>
-                <p><strong>Your Score:</strong> <?php echo htmlspecialchars($current_attempt['score'] ?? 'N/A'); ?></p>
+                <p><strong>Your Score:</strong> <?php echo htmlspecialchars($current_attempt['score'] ?? 'N/A'); ?> / <?php echo htmlspecialchars($current_attempt['max_possible_score'] ?? 'N/A'); ?></p>
+                <p><strong>Percentage Score:</strong> <span class="font-bold <?php echo ($current_attempt['percentage_score'] !== 'N/A' && $current_attempt['percentage_score'] >= 70) ? 'text-green-600' : 'text-red-600'; ?>"><?php echo htmlspecialchars($current_attempt['percentage_score']); ?>%</span></p>
             </div>
 
             <h3 class="text-xl font-semibold text-gray-700 mb-3">Questions and Your Answers</h3>
@@ -165,29 +196,29 @@ if (!$view_attempt_id) {
 
             <div class="mt-8">
                 <a href="view_history.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
-                    &larr; Back to All Attempts
+                    ← Back to All Attempts
                 </a>
             </div>
         </div>
 
     <?php else: ?>
         <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Your Recent Attempts</h2>
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Your Assessment Attempts</h2>
             <?php if (empty($attempts)): ?>
-                <p class="text-gray-600">You have not completed any quizzes yet.</p>
+                <p class="text-gray-600">You haven't completed any assessments yet.</p>
                 <div class="mt-4 text-center">
                     <a href="dashboard.php" class="inline-block bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition duration-300">
-                        Explore Available Quizzes
+                        Explore Available Assessments
                     </a>
                 </div>
             <?php else: ?>
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quiz Title</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score (%)</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
@@ -196,13 +227,19 @@ if (!$view_attempt_id) {
                         <?php foreach ($attempts as $attempt): ?>
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['score'] ?? 'N/A'); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <?php echo htmlspecialchars($attempt['score'] ?? 'N/A'); ?> / <?php echo htmlspecialchars($attempt['max_possible_score'] ?? 'N/A'); ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <span class="<?php echo ($attempt['percentage_score'] !== 'N/A' && $attempt['percentage_score'] >= 70) ? 'text-green-600 font-bold' : 'text-red-600 font-bold'; ?>">
+                                    <?php echo htmlspecialchars($attempt['percentage_score']); ?>%
+                                </span>
+                            </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($attempt['start_time'])); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['end_time'] ? date('g:i A, F j, Y', strtotime($attempt['end_time'])) : 'N/A'; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <a href="view_history.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
-                                    class="text-blue-600 hover:text-blue-900">View Details</a>
+                                   class="text-blue-600 hover:text-blue-900">View Details</a>
                             </td>
                         </tr>
                         <?php endforeach; ?>
