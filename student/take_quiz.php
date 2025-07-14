@@ -102,17 +102,21 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
 }
 ?>
 
+<!-- Include TensorFlow.js and BlazeFace Model -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
+<!-- Include Proctoring CSS -->
 <link rel="stylesheet" href="<?php echo BASE_URL; ?>public/css/proctoring.css">
 
 <div class="container mx-auto p-4 py-8">
     <?php echo $message; // Display any feedback messages ?>
 
     <?php if ($quiz && $quiz_data_loaded): ?>
+        <!-- Proctoring Section (Always visible at the top) -->
         <?php include '../public/html/proctoring_widget.html'; ?>
 
+        <!-- Quiz Section (Initially hidden, enabled by proctoring.js) -->
         <div id="quizContent" class="hidden">
             <div class="bg-white p-6 rounded-lg shadow-md mb-8">
                 <h1 class="text-3xl font-bold text-theme-color mb-4"><?php echo htmlspecialchars($quiz['title']); ?></h1>
@@ -138,10 +142,12 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
                 <form id="quizForm" action="<?php echo BASE_URL; ?>quiz/process_quiz.php" method="POST" class="space-y-8">
                     <input type="hidden" name="quiz_id" value="<?php echo htmlspecialchars($quiz['quiz_id']); ?>">
                     <input type="hidden" name="attempt_id" value="<?php echo htmlspecialchars($current_attempt_id); ?>">
+                    <!-- Removed: is_public_quiz hidden input as 'is_public' column no longer exists -->
                     <input type="hidden" id="current-question-index" value="0">
                     <input type="hidden" id="questions-data" value="<?php echo htmlspecialchars(json_encode($questions), ENT_QUOTES, 'UTF-8'); ?>">
 
                     <div id="question-container" class="bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-200">
+                        <!-- Question will be loaded here by JavaScript -->
                         <p class="text-center text-gray-600">Loading question...</p>
                     </div>
 
@@ -175,6 +181,7 @@ if (!isset($_GET['quiz_id']) || !is_numeric($_GET['quiz_id'])) {
     <?php endif; ?>
 </div>
 
+<!-- Include Proctoring JavaScript -->
 <script src="<?php echo BASE_URL; ?>public/js/proctoring.js"></script>
 <script>
 // --- Quiz-specific JavaScript (controls rendering and timer) ---
@@ -387,8 +394,11 @@ quizForm?.addEventListener('submit', (event) => {
 
 
 // --- Integration with Proctoring (Callbacks) ---
+// These variables are now passed to initProctoring directly
 const attemptId = <?php echo json_encode($current_attempt_id); ?>;
 const userId = <?php echo json_encode($user_id); ?>;
+const quizId = <?php echo json_encode($quiz_id); ?>; // Pass quiz_id
+const appBaseUrl = <?php echo json_encode(BASE_URL); ?>; // Pass BASE_URL
 
 /**
  * Callback function executed when proctoring conditions are met.
@@ -529,7 +539,12 @@ window.addEventListener('DOMContentLoaded', () => {
             onConditionsMet: onProctoringConditionsMet,
             onConditionsViolated: onProctoringConditionsViolated,
             onCriticalError: onProctoringCriticalError,
-            sendProctoringLog: sendProctoringLog
+            sendProctoringLog: sendProctoringLog,
+            // Pass IDs and Base URL to proctoring.js
+            quizId: quizId,
+            attemptId: attemptId,
+            userId: userId,
+            baseUrl: appBaseUrl
         });
     } else {
         console.error("proctoring.js not loaded or initProctoring function not found.");

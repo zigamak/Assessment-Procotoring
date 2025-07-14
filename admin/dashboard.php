@@ -36,7 +36,8 @@ try {
 ?>
 
 <div class="container mx-auto p-4 py-8">
-    <h1 class="text-3xl font-bold text-theme-color mb-6">Admin Dashboard</h1>
+   <h1 class="text-3xl font-bold text-accent mb-6">Welcome, <?php echo ucfirst($logged_in_username); ?>!</h1>
+    
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <!-- Dashboard Card 1: Total Users -->
@@ -81,7 +82,7 @@ try {
 
     <h2 class="text-2xl font-bold text-theme-color mb-4">Quick Actions</h2>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <a href="manage_users.php" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col items-center justify-center text-center">
+        <a href="users.php" class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col items-center justify-center text-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-theme-color mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M10 20v-2a3 3 0 013-3h4a3 3 0 013 3v2M3 8a4 4 0 100 8.002M9 16h6" />
             </svg>

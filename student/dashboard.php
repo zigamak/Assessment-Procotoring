@@ -4,7 +4,7 @@
 
 require_once '../includes/session.php';
 require_once '../includes/db.php';
-require_once '../includes/functions.php';
+require_once '../includes/functions.php'; // Contains format_datetime() and display_message()
 
 // Include the student specific header. This also handles role enforcement.
 require_once '../includes/header_student.php';
@@ -12,8 +12,11 @@ require_once '../includes/header_student.php';
 $message = ''; // Initialize message variable for feedback
 $all_assessments_for_display = []; // Will hold all assessments with their status
 $all_previous_attempts = []; // All attempts, to be sliced for display
-$attempts_summary_per_quiz = [];
+$attempts_summary_per_quiz = []; // Summary of attempts per quiz for dashboard cards
 $user_id = getUserId(); // Get the logged-in student's user_id
+
+// Fetch the logged-in user's name
+$logged_in_username = htmlspecialchars($_SESSION['username'] ?? 'Student'); // Default to 'Student' if not set
 
 // --- START: Verification Check Integration ---
 $verification_completed = false;
@@ -104,13 +107,13 @@ try {
     // Fetch ALL previous assessment attempts by the current student
     // Also fetch max_score for each quiz for percentage calculation
     $stmt = $pdo->prepare("
-        SELECT 
-            qa.attempt_id, 
-            qa.score, 
-            qa.start_time, 
-            qa.end_time, 
-            qa.is_completed, 
-            q.title as quiz_title, 
+        SELECT
+            qa.attempt_id,
+            qa.score,
+            qa.start_time,
+            qa.end_time,
+            qa.is_completed,
+            q.title as quiz_title,
             q.quiz_id,
             (SELECT SUM(score) FROM questions WHERE quiz_id = q.quiz_id) as max_possible_score
         FROM quiz_attempts qa
@@ -174,7 +177,7 @@ try {
 ?>
 
 <div class="container mx-auto p-4 py-8">
-    <h1 class="text-3xl font-bold text-theme-color mb-6">Student Dashboard</h1>
+   <h1 class="text-3xl font-bold text-accent mb-6">Welcome, <?php echo ucfirst($logged_in_username); ?>!</h1>
 
     <?php echo $message; // Display any feedback messages ?>
 
@@ -198,13 +201,10 @@ try {
         <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
             <div>
                 <h2 class="text-xl font-semibold text-gray-800">Assessments Available</h2>
-                <p class="text-3xl font-bold text-theme-color mt-2"><?php echo htmlspecialchars(count($all_assessments_for_display)); ?></p>
+                <p class="text-3xl font-bold text-accent mt-2"><?php echo htmlspecialchars(count($all_assessments_for_display)); ?></p>
             </div>
             <div class="text-gray-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
-            </div>
+                <i class="fas fa-file-alt fa-3x"></i> </div>
         </div>
 
         <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
@@ -219,12 +219,9 @@ try {
                 ?></p>
             </div>
             <div class="text-gray-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
+                <i class="fas fa-check-circle fa-3x"></i> </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center justify-center">
             <h2 class="text-xl font-semibold text-gray-800">Assessments Passed</h2>
             <p class="text-3xl font-bold text-blue-600 mt-2"><?php
@@ -235,14 +232,11 @@ try {
                 echo htmlspecialchars($total_passed);
             ?></p>
             <div class="mt-4">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                </svg>
-            </div>
+                <i class="fas fa-trophy fa-3x text-gray-500"></i> </div>
         </div>
     </div>
 
-    <h2 class="text-2xl font-bold text-theme-color mb-4">All Assessments</h2>
+    <h2 class="text-2xl font-bold text-accent mb-4">All Assessments</h2>
     <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto mb-8">
         <?php if (empty($all_assessments_for_display)): ?>
             <p class="text-gray-600">No assessments found.</p>
@@ -261,8 +255,27 @@ try {
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php foreach ($all_assessments_for_display as $assessment): ?>
                     <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['title']); ?></td>
-                        <td class="px-6 py-4 text-sm text-gray-900 max-w-xs overflow-hidden text-ellipsis"><?php echo htmlspecialchars($assessment['description']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <a href="<?php echo BASE_URL; ?>student/take_quiz.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>" class="text-accent hover:text-blue-700 font-medium">
+                                <?php echo htmlspecialchars($assessment['title']); ?>
+                            </a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-900 max-w-xs overflow-hidden text-ellipsis">
+                            <?php
+                            $description = htmlspecialchars($assessment['description']);
+                            $short_description_limit = 15; // Number of words to show
+                            $words = explode(' ', $description);
+
+                            if (count($words) > $short_description_limit) {
+                                $short_description = implode(' ', array_slice($words, 0, $short_description_limit)) . '...';
+                                echo '<span id="short-desc-' . $assessment['quiz_id'] . '">' . $short_description . '</span>';
+                                echo '<span id="full-desc-' . $assessment['quiz_id'] . '" style="display: none;">' . $description . '</span>';
+                                echo '<button onclick="toggleDescription(' . $assessment['quiz_id'] . ')" class="text-accent hover:text-blue-700 ml-2 text-xs font-semibold bg-gray-100 px-2 py-1 rounded">Read More</button>';
+                            } else {
+                                echo $description;
+                            }
+                            ?>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <?php
                                 $attempts_left = ($assessment['max_attempts'] == 0) ? 'Unlimited' : ($assessment['max_attempts'] - $assessment['attempts_taken']);
@@ -272,12 +285,12 @@ try {
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <?php 
+                            <?php
                                 echo $assessment['assessment_fee'] > 0 ? '₦' . number_format($assessment['assessment_fee'], 2) : 'Free';
                             ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <?php 
+                            <?php
                             $can_start_assessment = true;
                             $action_link = '';
                             $action_text = '';
@@ -290,25 +303,29 @@ try {
                                 $action_class = 'text-gray-400 cursor-not-allowed';
                                 $action_title = 'Please complete your profile verification to start this assessment.';
                             } elseif ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']) {
-                                $can_start_assessment = false;
+                                // This is the "Pay Now" case
+                                $can_start_assessment = false; // Cannot start yet, payment needed
                                 $action_text = 'Pay Now (₦' . number_format($assessment['assessment_fee'], 2) . ')';
                                 $action_link = BASE_URL . 'student/make_payment.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']) . '&amount=' . htmlspecialchars($assessment['assessment_fee']);
-                                $action_class = 'text-orange-600 hover:text-orange-800';
+                                $action_class = 'text-orange-600 hover:text-orange-800 font-bold'; // Added font-bold for better visibility
                                 $action_title = 'Payment required to start this assessment.';
                             } elseif ($assessment['max_attempts'] !== 0 && $assessment['attempts_taken'] >= $assessment['max_attempts']) {
                                 $can_start_assessment = false;
                                 $action_text = 'Attempts Exhausted';
-                                $action_class = 'text-red-600';
+                                $action_class = 'text-red-600 cursor-not-allowed'; // Added cursor-not-allowed
                                 $action_title = 'You have used all your attempts for this assessment.';
                             } else {
                                 $action_text = 'Start Assessment';
                                 $action_link = BASE_URL . 'student/take_quiz.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']);
-                                $action_class = 'text-green-600 hover:text-green-900';
+                                $action_class = 'text-green-600 hover:text-green-900 font-bold'; // Added font-bold
                             }
 
-                            if ($can_start_assessment && !empty($action_link)) {
+                            // Render the link or span based on whether an action is possible
+                            if (!empty($action_link) && ($can_start_assessment || ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']))) {
+                                // Allow "Start Assessment" and "Pay Now" to be actual links
                                 echo '<a href="' . $action_link . '" class="' . $action_class . '" title="' . $action_title . '">' . $action_text . '</a>';
                             } else {
+                                // For "Verification Required" and "Attempts Exhausted", display as text
                                 echo '<span class="' . $action_class . '" title="' . $action_title . '">' . $action_text . '</span>';
                             }
                             ?>
@@ -320,7 +337,7 @@ try {
         <?php endif; ?>
     </div>
 
-    <h2 class="text-2xl font-bold text-theme-color mb-4">Your Recent Assessment Results</h2>
+    <h2 class="text-2xl font-bold text-accent mb-4">Your Recent Assessment Results</h2>
     <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
         <?php if (empty($all_previous_attempts)): ?>
             <p class="text-gray-600">You have not completed any assessments yet.</p>
@@ -337,9 +354,9 @@ try {
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    <?php 
+                    <?php
                     $displayed_attempts_count = 0;
-                    foreach ($all_previous_attempts as $attempt): 
+                    foreach ($all_previous_attempts as $attempt):
                         if ($displayed_attempts_count >= 5) break; // Limit to 5 attempts
                     ?>
                     <tr>
@@ -355,10 +372,10 @@ try {
                             ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <?php echo date('h:i A, j F, Y', strtotime($attempt['start_time'])); ?>
+                            <?php echo format_datetime($attempt['start_time']); ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <?php echo $attempt['end_time'] ? date('h:i A, j F, Y', strtotime($attempt['end_time'])) : 'N/A'; ?>
+                            <?php echo $attempt['end_time'] ? format_datetime($attempt['end_time']) : 'N/A'; ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <?php
@@ -370,9 +387,9 @@ try {
                                class="text-blue-600 hover:text-blue-900">View Details</a>
                         </td>
                     </tr>
-                    <?php 
+                    <?php
                     $displayed_attempts_count++;
-                    endforeach; 
+                    endforeach;
                     ?>
                 </tbody>
             </table>
@@ -386,7 +403,7 @@ try {
         <?php endif; ?>
     </div>
 
-    <h2 class="text-2xl font-bold text-theme-color mb-4">Overall Assessment Statistics</h2>
+    <h2 class="text-2xl font-bold text-accent mb-4">Overall Assessment Statistics</h2>
     <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
         <?php if (empty($attempts_summary_per_quiz)): ?>
             <p class="text-gray-600">No assessment statistics available yet.</p>
@@ -411,7 +428,7 @@ try {
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['passed_attempts']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['failed_attempts']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <?php 
+                            <?php
                             if ($summary['completed_attempts'] > 0 && $summary['max_score'] > 0) {
                                 $avg_percentage = (($summary['total_score_sum'] / $summary['completed_attempts']) / $summary['max_score']) * 100;
                                 echo htmlspecialchars(round($avg_percentage, 2)) . '%';
@@ -437,33 +454,49 @@ require_once '../includes/footer_student.php';
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const verificationModal = document.getElementById('verificationModal');
-        
+
         // Intercept clicks on 'Start Assessment' or 'Pay Now' if conditions are not met
         document.querySelectorAll('a[href*="take_quiz.php"], a[href*="make_payment.php"]').forEach(link => {
             link.addEventListener('click', function(event) {
-                const row = event.target.closest('tr');
-                if (row) {
-                    // Check if the link itself indicates it's a disabled action (e.g., "Attempts Exhausted")
-                    const isActionDisabled = event.target.classList.contains('cursor-not-allowed') || event.target.classList.contains('text-red-600');
-                    const isPayNowLink = event.target.textContent.includes('Pay Now');
+                const isVerificationRequiredText = event.target.textContent.includes('Verification Required');
+                const isAttemptsExhaustedText = event.target.textContent.includes('Attempts Exhausted');
 
-                    if (isActionDisabled && !isPayNowLink) { // Don't prevent Pay Now, it has its own flow
+                if (isVerificationRequiredText || isAttemptsExhaustedText) {
+                    event.preventDefault();
+                    const title = event.target.getAttribute('title');
+                    if (title) {
+                        alert(title); // Using alert as per previous pattern, consider custom modal for better UX
+                    } else {
+                        alert('This action is not available at this time.');
+                    }
+                } else if (verificationModal && verificationModal.style.display !== 'none') {
+                    // If verification modal is visible and it's a 'Start Assessment' link, prevent default
+                    if (event.target.href.includes('take_quiz.php')) {
                         event.preventDefault();
-                        const title = event.target.getAttribute('title');
-                        if (title) {
-                            alert(title);
-                        } else {
-                            alert('This action is not available at this time.');
-                        }
-                    } else if (verificationModal && verificationModal.style.display !== 'none' && !isPayNowLink) {
-                        // If verification modal is visible and it's not a pay now link
-                        event.preventDefault();
-                        alert('Please complete your profile verification before starting any assessment.');
+                        alert('Please complete your profile verification before starting any assessment.'); // Using alert
                         verificationModal.style.display = 'flex'; // Re-show modal
                     }
-                    // If it's a "Pay Now" link, allow default behavior (redirection)
+                    // For "Pay Now" links, no `preventDefault()` is called here, so it will proceed normally.
                 }
             });
         });
     });
+
+    // Function to toggle description visibility
+    function toggleDescription(quizId) {
+        const shortDesc = document.getElementById('short-desc-' + quizId);
+        const fullDesc = document.getElementById('full-desc-' + quizId);
+        // The button is the third sibling after shortDesc and fullDesc (which is hidden)
+        const button = document.querySelector(`#short-desc-${quizId} ~ button`);
+
+        if (fullDesc.style.display === 'none') {
+            shortDesc.style.display = 'none';
+            fullDesc.style.display = 'inline';
+            button.textContent = 'Show Less';
+        } else {
+            shortDesc.style.display = 'inline';
+            fullDesc.style.display = 'none';
+            button.textContent = 'Read More';
+        }
+    }
 </script>

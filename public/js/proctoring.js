@@ -30,6 +30,16 @@ const AUDIO_VOLUME_THRESHOLD = 0.1; // Adjust as needed, based on normalized vol
 let lastActivityTimestamp = Date.now();
 const INACTIVITY_THRESHOLD_SECONDS = 60; // 60 seconds of no mouse/keyboard activity
 
+// New variables for photo capture
+let proctoringPhotoInterval = null;
+const PHOTO_CAPTURE_INTERVAL_MS = 60000; // Capture photo every 60 seconds (60 * 1000 ms)
+
+// Variables to hold quiz/user/attempt IDs and base URL passed from PHP
+let currentQuizId = null;
+let currentAttemptId = null;
+let currentUserId = null;
+let baseUrl = ''; // Will be set by initProctoring
+
 let onProctoringConditionsMetCallback = () => {};
 let onProctoringConditionsViolatedCallback = () => {};
 let onProctoringCriticalErrorCallback = () => {};
@@ -71,14 +81,29 @@ const proctoringAutoSubmitMessage = document.getElementById('proctoringAutoSubmi
 const proctoringAutoSubmitCloseButton = document.getElementById('proctoringAutoSubmitCloseButton');
 
 function initProctoring(callbacks) {
+    // Assign external callbacks
     if (callbacks.onConditionsMet) onProctoringConditionsMetCallback = callbacks.onConditionsMet;
     if (callbacks.onConditionsViolated) onProctoringConditionsViolatedCallback = callbacks.onConditionsViolated;
     if (callbacks.onCriticalError) onProctoringCriticalErrorCallback = callbacks.onCriticalError;
     if (callbacks.sendProctoringLog) sendProctoringLogCallback = callbacks.sendProctoringLog;
 
+    // Assign IDs and base URL passed from PHP
+    currentQuizId = callbacks.quizId;
+    currentAttemptId = callbacks.attemptId;
+    currentUserId = callbacks.userId;
+    baseUrl = callbacks.baseUrl; // Ensure BASE_URL from PHP is passed here
+
     proctoringVideoElement = document.getElementById('proctoringVideo');
     proctoringCanvasElement = document.getElementById('proctoringCanvas');
+
+    // Essential check: If elements are not found, trigger critical error.
+    if (!proctoringVideoElement || !proctoringCanvasElement) {
+        console.error("Proctoring: Video or Canvas element not found. Cannot initialize.");
+        triggerProctoringCriticalError("Required proctoring elements are missing (video/canvas). Please ensure they are in the HTML.");
+        return;
+    }
     proctoringContext = proctoringCanvasElement.getContext('2d');
+
 
     startAssessmentButton?.addEventListener('click', requestFullscreenAndStartProctoring);
     proctoringModalCloseButton?.addEventListener('click', hideProctoringErrorModal);
@@ -117,6 +142,10 @@ function updateProctoringStatus(text, type = 'info') {
 
 async function loadProctoringModel() {
     try {
+        // Ensure TensorFlow.js and BlazeFace are loaded
+        if (typeof tf === 'undefined' || typeof blazeface === 'undefined') {
+            throw new Error("TensorFlow.js or BlazeFace library not loaded. Check script includes.");
+        }
         proctoringModel = await blazeface.load();
         updateProctoringStatus("Security model loaded. Click 'Start Assessment' to begin proctoring.", 'info');
         if (startAssessmentButton) {
@@ -146,13 +175,20 @@ async function startProctoringCamera() {
             proctoringVideoElement.play();
             lastCameraActivityTimestamp = Date.now();
             startAudioMonitoring(stream);
+            startPhotoCapture(); // START PHOTO CAPTURE HERE
             updateProctoringConditions();
         };
         sendProctoringLogCallback('camera_started', 'Webcam stream initiated successfully.');
     } catch (error) {
         console.error("Error accessing webcam:", error);
-        updateProctoringStatus("Camera access denied or failed: " + error.message, 'error');
-        triggerProctoringCriticalError("Camera access denied or failed. Please allow camera access and refresh the page.");
+        let errorMessage = "Camera access denied or failed.";
+        if (error.name === "NotAllowedError") {
+            errorMessage = "Camera access was denied. Please allow camera access in your browser settings.";
+        } else if (error.name === "NotFoundError") {
+            errorMessage = "No camera found. Please ensure a webcam is connected.";
+        }
+        updateProctoringStatus(errorMessage, 'error');
+        triggerProctoringCriticalError(errorMessage + " Please allow camera access and refresh the page.");
     }
 }
 
@@ -166,7 +202,8 @@ function startAudioMonitoring(stream) {
     }
 
     if (microphoneStream) {
-        microphoneStream.getTracks().forEach(track => track.stop());
+        microphoneStream.disconnect();
+        microphoneStream.mediaStream.getTracks().forEach(track => track.stop());
     }
 
     microphoneStream = audioContext.createMediaStreamSource(stream);
@@ -186,7 +223,7 @@ function startAudioMonitoring(stream) {
         const normalizedVolume = average / 255;
 
         if (normalizedVolume > AUDIO_VOLUME_THRESHOLD) {
-            sendProctoringLogCallback('audio_anomaly', { volume: normalizedVolume, timestamp: Date.now() });
+            sendProctoringLogCallback('audio_anomaly', { volume: normalizedVolume.toFixed(2), timestamp: Date.now() });
         }
         requestAnimationFrame(checkAudio);
     }
@@ -272,11 +309,13 @@ async function detectFaces() {
 function startProctoringGracePeriod(reason) {
     if (proctoringErrorTriggered || proctoringFullscreenPromptOverlay.classList.contains('active')) return;
 
+    // IMPORTANT CHANGE: Only prevent starting if it's the EXACT same reason AND already active.
+    // This ensures tab switch warnings can repeatedly trigger.
     if (proctoringGracePeriodTimer && proctoringGracePeriodReason === reason) {
         return;
     }
 
-    clearProctoringGracePeriod();
+    clearProctoringGracePeriod(); // Clear any existing grace period to start fresh
 
     proctoringGracePeriodReason = reason;
     proctoringGracePeriodSeconds = PROCTORING_GRACE_PERIOD_DURATION_SECONDS;
@@ -305,8 +344,8 @@ function clearProctoringGracePeriod() {
         clearInterval(proctoringGracePeriodTimer);
         proctoringGracePeriodTimer = null;
         proctoringGracePeriodSeconds = 0;
-        proctoringGracePeriodReason = "";
-        updateProctoringConditions();
+        proctoringGracePeriodReason = ""; // Clear the reason when the grace period ends
+        updateProctoringConditions(); // Re-evaluate conditions immediately after clearing
         sendProctoringLogCallback('grace_period_cleared', 'Violation corrected.');
     }
 }
@@ -397,7 +436,25 @@ function updateProctoringConditions() {
                 startAssessmentOverlay.classList.add('hidden');
             }
         } else if (!isTabVisible) {
-            // Tab switch handling moved to handleVisibilityChange to ensure immediate action
+            // This is the crucial part for tab switches
+            // Increment count directly when tab becomes hidden
+            tabSwitchCount++;
+            sendProctoringLogCallback('tab_switch', { count: tabSwitchCount, max: MAX_TAB_SWITCHES });
+            updateProctoringStatus(`You left the assessment tab (${tabSwitchCount}/${MAX_TAB_SWITCHES}). Please stay on this tab.`, 'warning');
+
+            if (tabSwitchCount >= MAX_TAB_SWITCHES) {
+                const assessmentForm = document.querySelector('form');
+                if (assessmentForm) {
+                    showProctoringAutoSubmitModal(`Your assessment has been automatically submitted due to excessive tab switches (${MAX_TAB_SWITCHES} times). Please acknowledge to continue.`);
+                    assessmentForm.submit();
+                    sendProctoringLogCallback('form_submitted', 'Form submitted due to excessive tab switches.');
+                } else {
+                    triggerProctoringCriticalError("Assessment form not found for submission after excessive tab switches.");
+                }
+            } else {
+                // Always start a grace period for tab switch, allowing it to reset the timer
+                startProctoringGracePeriod("You left the assessment tab.");
+            }
             if (startAssessmentOverlay) {
                 startAssessmentOverlay.classList.add('hidden');
             }
@@ -425,15 +482,20 @@ function triggerProctoringCriticalError(message) {
     proctoringErrorTriggered = true;
 
     proctoringDetectionActive = false;
+    // Stop camera stream
     if (proctoringVideoElement && proctoringVideoElement.srcObject) {
         proctoringVideoElement.srcObject.getTracks().forEach(track => track.stop());
     }
+    // Stop audio monitoring
     if (audioContext) {
         audioContext.close();
         audioContext = null;
         analyser = null;
         microphoneStream = null;
     }
+    // Stop photo capture
+    stopPhotoCapture(); // STOP PHOTO CAPTURE HERE
+
     if (startAssessmentOverlay) {
         startAssessmentOverlay.classList.add('hidden');
     }
@@ -521,20 +583,18 @@ function handleFullscreenChange() {
 }
 
 function handleVisibilityChange() {
-    if (!document.hidden) {
-        if (isFullscreenCountdownActive) {
-            clearFullscreenCountdown();
-        }
-        // Clear tab switch grace period when returning to the tab
-        if (proctoringGracePeriodReason.includes("You left the assessment tab")) {
-            clearProctoringGracePeriod();
-        }
-        updateProctoringConditions();
-    } else {
-        // Always trigger a new grace period on tab switch
+    // If returning to the tab and a fullscreen countdown was active, clear it.
+    if (!document.hidden && isFullscreenCountdownActive) {
+        clearFullscreenCountdown();
+    }
+
+    // If the tab is hidden
+    if (document.hidden) {
+        // Increment count and apply logic *immediately* when tab is hidden
         tabSwitchCount++;
         sendProctoringLogCallback('tab_switch', { count: tabSwitchCount, max: MAX_TAB_SWITCHES });
         updateProctoringStatus(`You left the assessment tab (${tabSwitchCount}/${MAX_TAB_SWITCHES}). Please stay on this tab.`, 'warning');
+
         if (tabSwitchCount >= MAX_TAB_SWITCHES) {
             const assessmentForm = document.querySelector('form');
             if (assessmentForm) {
@@ -545,9 +605,20 @@ function handleVisibilityChange() {
                 triggerProctoringCriticalError("Assessment form not found for submission after excessive tab switches.");
             }
         } else {
+            // Always start a new grace period for tab switch when the tab becomes hidden
             startProctoringGracePeriod("You left the assessment tab.");
         }
+        if (startAssessmentOverlay) {
+            startAssessmentOverlay.classList.add('hidden');
+        }
+    } else { // If the tab becomes visible
+        // Clear any tab-switch specific grace period if it was active
+        if (proctoringGracePeriodReason.includes("You left the assessment tab")) {
+            clearProctoringGracePeriod();
+        }
     }
+    // Always update conditions after visibility change to re-evaluate overall proctoring state
+    updateProctoringConditions();
 }
 
 let idleDetectionInterval = null;
@@ -579,6 +650,97 @@ function stopIdleDetection() {
 function handleCopyAttempt(event) {
     sendProctoringLogCallback('copy_attempt', 'User attempted to copy content.');
     startProctoringGracePeriod("Copying content is not allowed.");
+}
+
+/**
+ * Starts the periodic photo capture.
+ */
+function startPhotoCapture() {
+    if (proctoringPhotoInterval) {
+        clearInterval(proctoringPhotoInterval); // Clear any existing interval
+    }
+    // Capture first photo immediately, then every PHOTO_CAPTURE_INTERVAL_MS
+    capturePhoto();
+    proctoringPhotoInterval = setInterval(capturePhoto, PHOTO_CAPTURE_INTERVAL_MS);
+    sendProctoringLogCallback('photo_capture_started', `Photo capture initiated every ${PHOTO_CAPTURE_INTERVAL_MS / 1000} seconds.`);
+}
+
+/**
+ * Stops the periodic photo capture.
+ */
+function stopPhotoCapture() {
+    if (proctoringPhotoInterval) {
+        clearInterval(proctoringPhotoInterval);
+        proctoringPhotoInterval = null;
+        sendProctoringLogCallback('photo_capture_stopped', 'Photo capture stopped.');
+    }
+}
+
+/**
+ * Captures a single photo from the webcam and sends it to the server.
+ */
+function capturePhoto() {
+    if (!proctoringVideoElement || !proctoringCanvasElement || proctoringVideoElement.paused || proctoringVideoElement.ended || !proctoringVideoElement.srcObject) {
+        console.warn("Cannot capture photo: Video stream not active.");
+        return;
+    }
+
+    // Ensure canvas dimensions match video dimensions
+    proctoringCanvasElement.width = proctoringVideoElement.videoWidth;
+    proctoringCanvasElement.height = proctoringVideoElement.videoHeight;
+
+    // Draw the current video frame onto the canvas
+    proctoringContext.drawImage(proctoringVideoElement, 0, 0, proctoringCanvasElement.width, proctoringCanvasElement.height);
+
+    // Get the image data as a Base64 encoded PNG
+    const imageData = proctoringCanvasElement.toDataURL('image/png');
+
+    // Send the image data to the server
+    sendProctoringPhoto(imageData);
+}
+
+/**
+ * Sends the captured photo data to the server via Fetch API.
+ * @param {string} imageData - Base64 encoded image data (e.g., "data:image/png;base64,...").
+ */
+async function sendProctoringPhoto(imageData) {
+    if (!currentQuizId || !currentAttemptId || !currentUserId || !baseUrl) {
+        console.error("Proctoring photo upload failed: Missing quiz, attempt, user ID or base URL.");
+        sendProctoringLogCallback('photo_upload_failed', 'Missing IDs or Base URL for photo upload.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${baseUrl}student/capture_photo.php`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                quiz_id: currentQuizId,
+                attempt_id: currentAttemptId,
+                user_id: currentUserId,
+                image_data: imageData
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Failed to upload proctoring photo:', response.status, errorText);
+            sendProctoringLogCallback('photo_upload_failed', { status: response.status, error: errorText });
+        } else {
+            const result = await response.json();
+            if (result.success) {
+                sendProctoringLogCallback('photo_uploaded', `Photo captured and uploaded: ${result.image_path}`);
+            } else {
+                console.error('Server reported photo upload failed:', result.message);
+                sendProctoringLogCallback('photo_upload_failed', { message: result.message });
+            }
+        }
+    } catch (error) {
+        console.error('Network error during proctoring photo upload:', error);
+        sendProctoringLogCallback('photo_upload_failed', { error: error.message, type: 'network' });
+    }
 }
 
 window.initProctoring = initProctoring;

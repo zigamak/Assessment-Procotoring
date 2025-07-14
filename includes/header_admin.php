@@ -1,7 +1,6 @@
 <?php
 // includes/header_admin.php
-// Header template for the Admin dashboard with sidebar navigation and back button.
-// This header should only be included after role enforcement.
+// Header template for the Admin dashboard with sidebar navigation.
 
 require_once 'session.php';
 require_once 'functions.php';
@@ -14,11 +13,12 @@ enforceRole('admin', BASE_URL . 'auth/login.php'); // Redirect to login if not a
 $logged_in_username = htmlspecialchars($_SESSION['username'] ?? 'Admin');
 
 // Define the theme colors for consistent styling
-// Changed theme_color to a dark shade for sidebar, header remains white via direct class
-$sidebar_bg_color = "#0A192F"; // Dark charcoal for the sidebar background
+$sidebar_bg_color = "#1a202c"; // Darker shade for admin sidebar
 $text_color_light = "#e2e8f0"; // Light gray for text on dark background
 $hover_color_sidebar = "#2d3748"; // Slightly lighter charcoal for hover
-$accent_color = "#4299e1"; // A nice blue for active links/accents
+$accent_color = "#e53e3e"; // A nice red for active links/accents (your primary interactive color)
+$header_bg_color = "#ffffff"; // White for the main header
+$body_bg_color = "#f7fafc"; // Light gray background for the main content area
 
 ?>
 <!DOCTYPE html>
@@ -29,26 +29,56 @@ $accent_color = "#4299e1"; // A nice blue for active links/accents
     <title>Admin Dashboard - Assessment System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #eff6ff; /* Light blue-gray background for a softer look */
+            background-color: <?php echo $body_bg_color; ?>;
         }
-        /* Custom theme colors */
-        .bg-sidebar {
-            background-color: <?php echo $sidebar_bg_color; ?>;
+        /* Custom theme colors via Tailwind JIT classes */
+        .bg-sidebar { background-color: <?php echo $sidebar_bg_color; ?>; }
+        .text-sidebar-light { color: <?php echo $text_color_light; ?>; }
+        .hover\:bg-sidebar-hover:hover { background-color: <?php echo $hover_color_sidebar; ?>; }
+        .bg-accent { background-color: <?php echo $accent_color; ?>; }
+        .text-accent { color: <?php echo $accent_color; ?>; }
+        .bg-header { background-color: <?php echo $header_bg_color; ?>; }
+
+        /* Select2 specific styling adjustments to match Tailwind forms */
+        .select2-container .select2-selection--single {
+            height: 38px !important; /* Tailwind's form-input height */
+            border: 1px solid #d1d5db !important; /* border-gray-300 */
+            border-radius: 0.375rem !important; /* rounded-md */
+            display: flex;
+            align-items: center;
         }
-        .text-sidebar-light {
-            color: <?php echo $text_color_light; ?>;
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px !important; /* Adjust arrow height */
         }
-        .hover\:bg-sidebar-hover:hover {
-            background-color: <?php echo $hover_color_sidebar; ?>;
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px !important; /* Vertically align text */
+            padding-left: 0.75rem !important; /* px-3 */
         }
-        .bg-accent {
-            background-color: <?php echo $accent_color; ?>;
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+            background-color: <?php echo $accent_color; ?> !important;
+            color: white !important;
         }
-        .text-accent {
-            color: <?php echo $accent_color; ?>;
+        .select2-dropdown {
+            border: 1px solid #d1d5db !important;
+            border-radius: 0.375rem !important;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* shadow-md */
+            z-index: 50; /* Ensure dropdown is above other content */
+        }
+        .select2-search input {
+            border: 1px solid #d1d5db !important;
+            border-radius: 0.375rem !important;
+        }
+        .select2-container--default .select2-selection--single.select2-container--focus .select2-selection__rendered,
+        .select2-container--default .select2-selection--single.select2-container--focus {
+            border-color: <?php echo $accent_color; ?> !important; /* Focus ring color */
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5) !important; /* focus:ring-opacity-50 */
         }
 
         /* Custom scrollbar for sidebar */
@@ -67,7 +97,9 @@ $accent_color = "#4299e1"; // A nice blue for active links/accents
 </head>
 <body class="flex min-h-screen">
     <aside class="w-64 bg-sidebar text-sidebar-light shadow-lg flex flex-col fixed inset-y-0 left-0 z-40">
-        <div class="p-6 text-3xl font-bold border-b border-gray-700"> <a href="<?php echo BASE_URL; ?>admin/dashboard.php" class="hover:text-accent">Admin Panel</a>
+        <div class="p-6 text-3xl font-bold border-b border-gray-700 flex items-center justify-center">
+            <a href="<?php echo BASE_URL; ?>admin/dashboard.php" class="hover:opacity-80 transition duration-300">
+                <img src="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png" alt="Mackenny Tutors Logo" class="h-10"> </a>
         </div>
         <nav class="flex-grow p-4 overflow-y-auto sidebar">
             <ul class="space-y-2">
@@ -75,86 +107,102 @@ $accent_color = "#4299e1"; // A nice blue for active links/accents
                     <a href="<?php echo BASE_URL; ?>admin/dashboard.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
                        <?php echo (basename($_SERVER['PHP_SELF']) == 'dashboard.php') ? 'bg-accent text-white' : ''; ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m0 0l-7 7m7-7v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                        </svg>
-                        Dashboard
+                        <i class="fas fa-fw fa-tachometer-alt mr-3"></i> Dashboard
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo BASE_URL; ?>admin/manage_users.php"
+                    <a href="<?php echo BASE_URL; ?>admin/assessments.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
-                       <?php echo (basename($_SERVER['PHP_SELF']) == 'manage_users.php') ? 'bg-accent text-white' : ''; ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M10 20v-2a3 3 0 013-3h4a3 3 0 013 3v2M3 8a4 4 0 100 8.002M9 16h6" />
-                        </svg>
-                        Manage Users
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'assessments.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-file-alt mr-3"></i> Assessments
+                    </a>
+                </li>
+                
+                <li>
+                    <a href="<?php echo BASE_URL; ?>admin/users.php"
+                       class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'users.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-users mr-3"></i> Users
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo BASE_URL; ?>admin/manage_quizzes.php"
+                    <a href="<?php echo BASE_URL; ?>admin/results.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
-                       <?php echo (basename($_SERVER['PHP_SELF']) == 'manage_quizzes.php') ? 'bg-accent text-white' : ''; ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                        </svg>
-                        Manage Assessments
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'results.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-poll-h mr-3"></i> Results
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo BASE_URL; ?>admin/view_results.php"
+                    <a href="<?php echo BASE_URL; ?>admin/payments.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
-                       <?php echo (basename($_SERVER['PHP_SELF']) == 'view_results.php') ? 'bg-accent text-white' : ''; ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 2v-6m2 9H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        View Results
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'payments.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-money-bill-wave mr-3"></i> Payments
                     </a>
                 </li>
                 <li>
-                    <a href="<?php echo BASE_URL; ?>admin/profile.php"
+                    <a href="<?php echo BASE_URL; ?>admin/settings.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
-                       <?php echo (basename($_SERVER['PHP_SELF']) == 'profile.php') ? 'bg-accent text-white' : ''; ?>">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        Profile
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'settings.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-cog mr-3"></i> Settings
                     </a>
                 </li>
             </ul>
         </nav>
-        <div class="p-4 border-t border-gray-700 text-sm"> <div class="mb-2 text-sidebar-light">Welcome, <?php echo $logged_in_username; ?></div>
+        <div class="p-4 border-t border-gray-700 text-sm">
+            <div class="mb-2 text-sidebar-light">Welcome, <span class="font-semibold"><?php echo $logged_in_username; ?></span></div>
             <a href="<?php echo BASE_URL; ?>auth/logout.php" class="block bg-red-600 text-white text-center py-2 rounded-md font-semibold hover:bg-red-700 transition duration-300">
-                Logout
+                <i class="fas fa-sign-out-alt mr-2"></i> Logout
             </a>
         </div>
     </aside>
 
     <div class="flex-1 flex flex-col ml-64">
-        <header class="bg-white p-4 shadow-md sticky top-0 z-30">
+        <header class="bg-header p-4 shadow-md sticky top-0 z-30 border-b border-gray-200">
             <div class="container mx-auto flex justify-between items-center">
                 <div class="flex items-center space-x-4">
-                    <button onclick="history.back()" class="bg-blue-100 text-blue-700 px-4 py-2 rounded-md hover:bg-blue-200 transition duration-300 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Back
+                    <button onclick="history.back()" class="bg-blue-50 text-blue-700 px-4 py-2 rounded-md hover:bg-blue-100 transition duration-300 flex items-center">
+                        <i class="fas fa-arrow-left mr-2"></i> Back
                     </button>
-                    <h1 class="text-xl font-semibold text-gray-800">
+                    <h1 class="text-2xl font-bold text-gray-800">
                         <?php
-                            // Dynamically display page title based on current file
                             $current_page = basename($_SERVER['PHP_SELF']);
                             $page_titles = [
-                                'dashboard.php' => 'Dashboard Overview',
-                                'manage_users.php' => 'Manage User Accounts',
-                                'manage_quizzes.php' => 'Manage Quizzes & Questions',
-                                'view_results.php' => 'View Assessment Results',
-                                'profile.php' => 'Admin Profile', // Added for the new profile page
+                                'dashboard.php' => 'Admin Dashboard Overview',
+                                'assessments.php' => 'Manage Assessments',
+                                'questions.php' => 'Manage Questions',
+                                'users.php' => 'Manage Users',
+                                'results.php' => 'View Results',
+                                'payments.php' => 'View Payments',
+                                'settings.php' => 'System Settings',
                             ];
                             echo $page_titles[$current_page] ?? 'Admin Panel';
                         ?>
                     </h1>
                 </div>
-                </div>
+            </div>
         </header>
-        <main class="flex-grow p-4">
+        <main class="flex-grow p-6">
+            <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+            <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+            <script>
+                // A simple function to initialize Select2 on any element with the 'select2-enabled' class
+                function initializeSelect2() {
+                    $('.select2-enabled').each(function() {
+                        if (!$(this).data('select2')) { // Check if Select2 is already initialized
+                            $(this).attr('data-placeholder', $(this).find('option:first').text()); // Set placeholder from first option
+                            $(this).select2({
+                                placeholder: $(this).attr('data-placeholder') || "-- Select an option --",
+                                allowClear: $(this).data('allow-clear') || false,
+                                width: 'resolve' // Ensures Select2 takes the full width of its container
+                            });
+                        }
+                    });
+                }
+
+                // Call initializeSelect2 on document ready for initial page load
+                $(document).ready(function() {
+                    initializeSelect2();
+                });
+            </script>
+           

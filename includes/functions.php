@@ -125,7 +125,12 @@ function getUserEmail() {
     // Access the global PDO connection.
     global $pdo;
 
-    $user_id = getUserId(); // Call the getUserId function from includes/session.php
+    // getUserId() is assumed to be defined in includes/session.php
+    // Make sure session.php is required wherever getUserEmail() is called,
+    // or include it directly here if it contains only non-conflicting functions.
+    // For now, assuming it's available via an earlier require in the execution flow.
+    // If not, you might need: require_once __DIR__ . '/session.php';
+    $user_id = getUserId(); 
 
     if ($user_id && $pdo) { // Ensure user_id is available and PDO connection exists
         try {
@@ -141,7 +146,27 @@ function getUserEmail() {
     return null; // No user_id in session or PDO not available
 }
 
+/**
+ * Formats a given datetime string into a human-readable format.
+ * @param string $datetime_str The datetime string (e.g., 'YYYY-MM-DD HH:MM:SS').
+ * @param string $format The desired output format (default 'M d, Y h:i A').
+ * @return string The formatted datetime string, or 'N/A' if invalid.
+ */
+function format_datetime($datetime_str, $format = 'M d, Y h:i A') {
+    if (empty($datetime_str) || $datetime_str === '0000-00-00 00:00:00') {
+        return 'N/A';
+    }
+    try {
+        $dt = new DateTime($datetime_str);
+        return $dt->format($format);
+    } catch (Exception $e) {
+        error_log("Error formatting datetime: " . $e->getMessage() . " for input: " . $datetime_str);
+        return 'Invalid Date'; // Or handle as per your preference
+    }
+}
+
+
 // Add more general utility functions as needed.
-// For example, functions to format dates, validate emails, etc.
+// For example, functions to validate emails, etc.
 
 ?>

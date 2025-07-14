@@ -22,8 +22,17 @@ if (!$user_id) {
 $attempts = []; // Array to hold fetched quiz attempts for overview
 $current_attempt = null; // Object to hold detailed data for a single attempt view
 
+// --- Filter Variables ---
+$filter_quiz_id = sanitize_input($_GET['quiz_id'] ?? null);
+$filter_start_date = sanitize_input($_GET['start_date'] ?? null);
+$filter_end_date = sanitize_input($_GET['end_date'] ?? null);
+$filter_min_percentage = filter_input(INPUT_GET, 'min_percentage', FILTER_VALIDATE_FLOAT);
+// Ensure min_percentage is within a valid range
+if ($filter_min_percentage !== false && $filter_min_percentage < 0) $filter_min_percentage = 0;
+if ($filter_min_percentage !== false && $filter_min_percentage > 100) $filter_min_percentage = 100;
+
+
 // Sanitize the input attempt_id from the GET request
-// Ensure attempt_id is an integer if present, for strict type checking in queries
 $view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
 
 /**
@@ -38,6 +47,17 @@ function calculate_percentage($score, $max_score) {
     }
     return round(($score / $max_score) * 100, 2);
 }
+
+// Fetch all quizzes for the filter dropdown
+$all_quizzes_for_filters = [];
+try {
+    $stmt_quizzes = $pdo->query("SELECT quiz_id, title FROM quizzes ORDER BY title ASC");
+    $all_quizzes_for_filters = $stmt_quizzes->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("View History Quiz Fetch Error: " . $e->getMessage());
+    $message = display_message("Could not fetch assessment list for filters.", "error");
+}
+
 
 // Main logic to fetch either overview or detailed attempt
 if ($view_attempt_id) {
@@ -105,8 +125,8 @@ if ($view_attempt_id) {
 // If not viewing a specific attempt (or if the specific attempt failed/not found), show overview
 if (!$view_attempt_id) {
     try {
-        // Fetch overview of all quiz attempts for the current student
-        $stmt = $pdo->prepare("
+        // Fetch overview of all quiz attempts for the current student with filters
+        $sql = "
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
                 q.title as quiz_title,
@@ -114,19 +134,54 @@ if (!$view_attempt_id) {
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.quiz_id
             WHERE qa.user_id = :user_id
-            ORDER BY qa.start_time DESC
-        ");
-        $stmt->execute(['user_id' => $user_id]);
+        ";
+
+        $params = ['user_id' => $user_id];
+        $where_clauses = [];
+
+        if ($filter_quiz_id) {
+            $where_clauses[] = "q.quiz_id = :quiz_id";
+            $params['quiz_id'] = $filter_quiz_id;
+        }
+        if ($filter_start_date) {
+            $where_clauses[] = "DATE(qa.start_time) >= :start_date";
+            $params['start_date'] = $filter_start_date;
+        }
+        if ($filter_end_date) {
+            $where_clauses[] = "DATE(qa.start_time) <= :end_date";
+            $params['end_date'] = $filter_end_date;
+        }
+
+        if (!empty($where_clauses)) {
+            $sql .= " AND " . implode(" AND ", $where_clauses);
+        }
+
+        $sql .= " ORDER BY qa.start_time DESC";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         $attempts_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Process attempts to add percentage
+        // Process attempts to add percentage and then apply percentage filter
         foreach ($attempts_raw as $attempt) {
             if ($attempt['is_completed']) {
-                $attempt['percentage_score'] = calculate_percentage($attempt['score'], $attempt['max_possible_score']);
+                $calculated_percentage = calculate_percentage($attempt['score'], $attempt['max_possible_score']);
+                $attempt['percentage_score'] = $calculated_percentage;
             } else {
                 $attempt['percentage_score'] = 'N/A';
             }
-            $attempts[] = $attempt;
+
+            // Apply percentage filter AFTER calculation
+            if ($filter_min_percentage !== false) {
+                if ($attempt['is_completed'] && $attempt['percentage_score'] >= $filter_min_percentage) {
+                    $attempts[] = $attempt;
+                } else if (!$attempt['is_completed'] && $filter_min_percentage == 0) { // If filtering for 0%, show incomplete
+                    $attempts[] = $attempt;
+                }
+            } else {
+                // If no percentage filter is set, include all
+                $attempts[] = $attempt;
+            }
         }
 
     } catch (PDOException $e) {
@@ -137,8 +192,8 @@ if (!$view_attempt_id) {
 }
 ?>
 
-<div class="container mx-auto p-4 py-8">
-    <h1 class="text-3xl font-bold text-theme-color mb-6">Your Quiz History</h1>
+<div class="container mx-auto p-4 py-8 max-w-7xl">
+    <h1 class="text-3xl font-bold text-theme-color mb-6 text-center">Your Assessment History</h1>
 
     <?php echo $message; // Display any feedback messages ?>
 
@@ -196,48 +251,94 @@ if (!$view_attempt_id) {
 
             <div class="mt-8">
                 <a href="view_history.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
-                    ← Back to All Attempts
+                    &larr; Back to All Attempts
                 </a>
             </div>
         </div>
 
     <?php else: ?>
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Quiz Attempts</h2>
+            <form action="view_history.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                    <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
+                    <select name="quiz_id" id="quiz_id"
+                            class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
+                            data-placeholder="All Assessments" data-allow-clear="true">
+                        <option value=""></option>
+                        <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
+                            <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($quiz_filter['title']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="min_percentage" class="block text-sm font-medium text-gray-700 mb-1">Min. Percentage (%):</label>
+                    <input type="number" name="min_percentage" id="min_percentage" min="0" max="100" step="any"
+                           value="<?php echo htmlspecialchars($filter_min_percentage); ?>"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50"
+                           placeholder="e.g., 70">
+                </div>
+
+                <div>
+                    <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
+                    <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                </div>
+
+                <div>
+                    <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
+                    <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
+                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                </div>
+
+                <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
+                    <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
+                        <i class="fas fa-filter mr-2"></i> Apply Filters
+                    </button>
+                    <a href="view_history.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
+                        <i class="fas fa-undo mr-2"></i> Reset Filters
+                    </a>
+                </div>
+            </form>
+        </div>
+
         <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">Your Assessment Attempts</h2>
             <?php if (empty($attempts)): ?>
-                <p class="text-gray-600">You haven't completed any assessments yet.</p>
+                <p class="text-center text-gray-600 py-8">No assessment attempts found matching your criteria.</p>
                 <div class="mt-4 text-center">
                     <a href="dashboard.php" class="inline-block bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition duration-300">
                         Explore Available Assessments
                     </a>
                 </div>
             <?php else: ?>
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                <table class="min-w-full divide-y divide-gray-200 text-sm"> <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score (%)</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th> <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score (%)</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($attempts as $attempt): ?>
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td class="px-4 py-2 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-gray-900">
                                 <?php echo htmlspecialchars($attempt['score'] ?? 'N/A'); ?> / <?php echo htmlspecialchars($attempt['max_possible_score'] ?? 'N/A'); ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td class="px-4 py-2 whitespace-nowrap text-gray-900">
                                 <span class="<?php echo ($attempt['percentage_score'] !== 'N/A' && $attempt['percentage_score'] >= 70) ? 'text-green-600 font-bold' : 'text-red-600 font-bold'; ?>">
                                     <?php echo htmlspecialchars($attempt['percentage_score']); ?>%
                                 </span>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($attempt['start_time'])); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td class="px-4 py-2 whitespace-nowrap text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($attempt['start_time'])); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-right font-medium">
                                 <a href="view_history.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
                                    class="text-blue-600 hover:text-blue-900">View Details</a>
                             </td>
