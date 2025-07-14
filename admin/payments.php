@@ -91,7 +91,7 @@ try {
 
 } catch (PDOException $e) {
     error_log("Payments History Fetch Error: " . $e->getMessage());
-    $message = display_message("Could not retrieve payment history. Please try again later.", "error");
+    $message = display_message("Could not retrieve Payments. Please try again later.", "error");
 }
 
 ?>

@@ -170,7 +170,7 @@ try {
         }
 
         // Redirect logged-in users to their history page to see the results
-        redirect('../student/view_history.php?attempt_id=' . $attempt_id . '&message=quiz_submitted');
+        redirect('../student/assessments.php?attempt_id=' . $attempt_id . '&message=quiz_submitted');
 
     } else {
         // This is a public quiz, display results directly on this page
@@ -304,7 +304,7 @@ require_once '../includes/header_public.php'; // Ensure header is included for d
                 <a href="../student/dashboard.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
                     Back to Dashboard
                 </a>
-                <a href="../student/view_history.php?attempt_id=<?php echo htmlspecialchars($attempt_id); ?>" class="inline-block ml-4 bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 transition duration-300">
+                <a href="../student/assessments.php?attempt_id=<?php echo htmlspecialchars($attempt_id); ?>" class="inline-block ml-4 bg-gray-600 text-white px-6 py-3 rounded-md hover:bg-gray-700 transition duration-300">
                     View Full Attempt History
                 </a>
             <?php endif; ?>

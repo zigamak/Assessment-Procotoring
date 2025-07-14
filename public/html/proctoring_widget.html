@@ -1,5 +1,5 @@
 <!-- Proctoring Widget HTML -->
-<!-- NEW: Start Assessment Overlay/Popup - This will be displayed centrally -->
+
 <div id="startAssessmentOverlay" class="modal-overlay hidden">
     <div class="modal-content">
         <h2 class="modal-title">Ready to begin your assessment?</h2>
@@ -23,8 +23,6 @@
             Initializing camera...
         </div>
     </div>
-
-    <!-- Removed button-group as Start Assessment is now in overlay -->
 </div>
 
 <!-- Modals for Proctoring Alerts (hidden by default) -->
@@ -42,5 +40,21 @@
         <p class="modal-message"><span id="fullscreenCountdownText">To continue the assessment, you must remain in fullscreen mode.</span></p>
         <button id="proctoringReEnterFullscreenButton" class="modal-button primary-button">Go Fullscreen</button>
         <button id="proctoringCancelAssessmentButton" class="modal-button secondary-button">Cancel Assessment</button>
+    </div>
+</div>
+
+<div id="tabSwitchWarningOverlay" class="modal-overlay hidden">
+    <div class="modal-content prompt">
+        <h3 class="modal-title">Tab Switch Detected!</h3>
+        <p class="modal-message">You have left the assessment tab. Please click "Return to Assessment" to continue. You have <span id="tabSwitchCount">${MAX_TAB_SWITCHES}</span> warnings remaining before assessment termination.</p>
+        <button id="returnToTabButton" class="modal-button primary-button">Return to Assessment</button>
+    </div>
+</div>
+
+<div id="proctoringAutoSubmitModalOverlay" class="modal-overlay hidden">
+    <div class="modal-content">
+        <h3 class="modal-title">Assessment Submitted</h3>
+        <p id="proctoringAutoSubmitMessage" class="modal-message">Your assessment has been automatically submitted due to proctoring violations.</p>
+        <button id="proctoringAutoSubmitCloseButton" class="modal-button primary-button">Acknowledge</button>
     </div>
 </div>

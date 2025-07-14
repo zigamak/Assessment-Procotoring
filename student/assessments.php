@@ -1,5 +1,5 @@
 <?php
-// student/view_history.php
+// student/assessments.php
 // Allows students to view their quiz history and detailed results for specific attempts.
 
 require_once '../includes/session.php';
@@ -193,7 +193,7 @@ if (!$view_attempt_id) {
 ?>
 
 <div class="container mx-auto p-4 py-8 max-w-7xl">
-    <h1 class="text-3xl font-bold text-theme-color mb-6 text-center">Your Assessment History</h1>
+    <h1 class="text-3xl font-bold text-theme-color mb-6 text-center">Your Assessments</h1>
 
     <?php echo $message; // Display any feedback messages ?>
 
@@ -250,7 +250,7 @@ if (!$view_attempt_id) {
             <?php endif; ?>
 
             <div class="mt-8">
-                <a href="view_history.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
+                <a href="assessments.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
                     &larr; Back to All Attempts
                 </a>
             </div>
@@ -259,7 +259,7 @@ if (!$view_attempt_id) {
     <?php else: ?>
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Quiz Attempts</h2>
-            <form action="view_history.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <form action="assessments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                     <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
                     <select name="quiz_id" id="quiz_id"
@@ -298,7 +298,7 @@ if (!$view_attempt_id) {
                     <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
                         <i class="fas fa-filter mr-2"></i> Apply Filters
                     </button>
-                    <a href="view_history.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
+                    <a href="assessments.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
                         <i class="fas fa-undo mr-2"></i> Reset Filters
                     </a>
                 </div>
@@ -339,7 +339,7 @@ if (!$view_attempt_id) {
                             <td class="px-4 py-2 whitespace-nowrap text-gray-900"><?php echo date('g:i A, F j, Y', strtotime($attempt['start_time'])); ?></td>
                             <td class="px-4 py-2 whitespace-nowrap text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
                             <td class="px-4 py-2 whitespace-nowrap text-right font-medium">
-                                <a href="view_history.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
+                                <a href="assessments.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
                                    class="text-blue-600 hover:text-blue-900">View Details</a>
                             </td>
                         </tr>

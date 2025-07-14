@@ -1,6 +1,6 @@
 <?php
-// student/payment_history.php
-// Displays the payment history for the logged-in student with filtering options.
+// student/payments.php
+// Displays the Payments for the logged-in student with filtering options.
 
 require_once '../includes/session.php';
 require_once '../includes/db.php';
@@ -25,7 +25,7 @@ try {
     $stmt_quizzes = $pdo->query("SELECT quiz_id, title FROM quizzes ORDER BY title ASC");
     $all_quizzes_for_filters = $stmt_quizzes->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    error_log("Payment History Quiz Fetch Error: " . $e->getMessage());
+    error_log("Payments Quiz Fetch Error: " . $e->getMessage());
     $message = display_message("Could not fetch assessment list for filters.", "error");
 }
 
@@ -74,20 +74,20 @@ try {
     $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
-    error_log("Payment History Fetch Error: " . $e->getMessage());
-    $message = display_message("Could not retrieve payment history. Please try again later.", "error");
+    error_log("Payments Fetch Error: " . $e->getMessage());
+    $message = display_message("Could not retrieve Payments. Please try again later.", "error");
 }
 
 ?>
 
 <div class="container mx-auto p-4 py-8 max-w-7xl">
-    <h1 class="text-3xl font-bold text-accent mb-6 text-center">Your Payment History</h1>
+    <h1 class="text-3xl font-bold text-accent mb-6 text-center">Your Payments</h1>
 
     <?php echo $message; // Display any feedback messages ?>
 
     <div class="bg-white p-6 rounded-lg shadow-md mb-8">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Payments</h2>
-        <form action="payment_history.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <form action="payments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
                 <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
                 <select name="quiz_id" id="quiz_id"
@@ -129,7 +129,7 @@ try {
                 <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
                     <i class="fas fa-filter mr-2"></i> Apply Filters
                 </button>
-                <a href="payment_history.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
+                <a href="payments.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
                     <i class="fas fa-undo mr-2"></i> Reset Filters
                 </a>
             </div>

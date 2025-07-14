@@ -117,14 +117,14 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     <a href="<?php echo BASE_URL; ?>student/assessments.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
                        <?php echo (basename($_SERVER['PHP_SELF']) == 'assessments.php') ? 'bg-accent text-white' : ''; ?>">
-                        <i class="fas fa-fw fa-history mr-3"></i> Assessment History
+                        <i class="fas fa-fw fa-history mr-3"></i> Assessments
                     </a>
                 </li>
                 <li>
                     <a href="<?php echo BASE_URL; ?>student/payments.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
                        <?php echo (basename($_SERVER['PHP_SELF']) == 'payments.php') ? 'bg-accent text-white' : ''; ?>">
-                        <i class="fas fa-fw fa-money-bill-wave mr-3"></i> Payment History
+                        <i class="fas fa-fw fa-money-bill-wave mr-3"></i> Payments
                     </a>
                 </li>
                 <li>
@@ -156,8 +156,8 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                             $current_page = basename($_SERVER['PHP_SELF']);
                             $page_titles = [
                                 'dashboard.php' => ucfirst($logged_in_username) . "'s Dashboard", // Capitalize the first letter of username
-                                'assessments.php' => 'Assessment History', // Updated filename
-                                'payments.php' => 'Payment History',     // Updated filename
+                                'assessments.php' => 'Assessments', // Updated filename
+                                'payments.php' => 'Payments',     // Updated filename
                                 'profile.php' => 'Student Profile',
                             ];
                             echo $page_titles[$current_page] ?? 'Student Panel';

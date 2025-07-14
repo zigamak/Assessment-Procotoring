@@ -301,7 +301,7 @@ try {
             </button>
         </div>
 
-        <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-4">
+        <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-4 items-end">
             <input type="text" id="search" placeholder="Search by username or email..."
                    class="w-full py-2 px-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                    value="<?php echo htmlspecialchars($search); ?>">
@@ -311,6 +311,9 @@ try {
                 <option value="admin" <?php echo ($role_filter === 'admin') ? 'selected' : ''; ?>>Admin</option>
                 <option value="student" <?php echo ($role_filter === 'student') ? 'selected' : ''; ?>>Student</option>
             </select>
+            <button id="searchButton" class="bg-gray-700 hover:bg-gray-800 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 w-full sm:w-auto">
+                Search
+            </button>
         </div>
 
         <?php if (empty($users)): ?>
@@ -499,17 +502,22 @@ try {
         }
     }
 
-    // Search and filter handling - triggers page reload with new GET parameters
-    document.getElementById('search').addEventListener('input', function() {
-        const search = this.value;
+    // Function to trigger search and filter
+    function applySearchAndFilter() {
+        const search = document.getElementById('search').value;
         const role = document.getElementById('role_filter').value;
         window.location.href = `users.php?search=${encodeURIComponent(search)}&role=${encodeURIComponent(role)}`;
-    });
+    }
 
-    document.getElementById('role_filter').addEventListener('change', function() {
-        const search = document.getElementById('search').value;
-        const role = this.value;
-        window.location.href = `users.php?search=${encodeURIComponent(search)}&role=${encodeURIComponent(role)}`;
+    // Event listener for the new Search button
+    document.getElementById('searchButton').addEventListener('click', applySearchAndFilter);
+
+    // Optional: Allow pressing Enter in the search field to trigger search
+    document.getElementById('search').addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault(); // Prevent default form submission if any
+            applySearchAndFilter();
+        }
     });
 
     // Handle modal closing when clicking outside the modal content

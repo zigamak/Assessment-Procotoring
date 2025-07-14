@@ -383,7 +383,7 @@ try {
                             ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <a href="<?php echo BASE_URL; ?>student/view_history.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
+                            <a href="<?php echo BASE_URL; ?>student/assessments.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
                                class="text-blue-600 hover:text-blue-900">View Details</a>
                         </td>
                     </tr>
@@ -395,7 +395,7 @@ try {
             </table>
             <?php if (count($all_previous_attempts) > 5): ?>
             <div class="mt-4 text-center">
-                <a href="<?php echo BASE_URL; ?>student/view_history.php" class="inline-block bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300">
+                <a href="<?php echo BASE_URL; ?>student/assessments.php" class="inline-block bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300">
                     View All History &rarr;
                 </a>
             </div>
