@@ -5,13 +5,52 @@
 
 require_once 'session.php';
 require_once 'functions.php';
-require_once 'db.php'; // Ensure BASE_URL is available
+require_once 'db.php'; // Ensure BASE_URL is available and provides $pdo connection
 
 // Enforce that only students can access pages including this header
 enforceRole('student', BASE_URL . 'auth/login.php'); // Redirect to login if not student
 
 // Get the username from session for display
 $logged_in_username = htmlspecialchars($_SESSION['username'] ?? 'Student');
+$logged_in_user_id = $_SESSION['user_id'] ?? null; // Get user ID from session
+
+// Function to fetch user details (updated to include first_name and last_name)
+// This function needs to be defined once, preferably in functions.php or a dedicated model file.
+// For demonstration, I'm including it here, but ideally, it's globally available.
+if (!function_exists('fetchUserDetails')) {
+    function fetchUserDetails($pdo, $user_id) {
+        try {
+            $stmt = $pdo->prepare("SELECT user_id, username, email, password_hash, role, passport_image_path, city, state, country, first_name, last_name FROM users WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $user_id]);
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            error_log("Error fetching user details: " . $e->getMessage());
+            return null;
+        }
+    }
+}
+
+$user_details = null;
+$user_full_name = $logged_in_username; // Default to username
+$user_profile_image = BASE_URL . 'assets/images/default_profile.png'; // Default placeholder image path (adjust as needed for students)
+
+if ($logged_in_user_id && isset($pdo)) { // Ensure $pdo is available from db.php
+    $user_details = fetchUserDetails($pdo, $logged_in_user_id);
+    if ($user_details) {
+        $first_name = htmlspecialchars($user_details['first_name'] ?? '');
+        $last_name = htmlspecialchars($user_details['last_name'] ?? '');
+        if (!empty($first_name) || !empty($last_name)) {
+            $user_full_name = trim($first_name . ' ' . $last_name);
+        } else {
+            $user_full_name = htmlspecialchars($user_details['username'] ?? 'Student');
+        }
+
+        if (!empty($user_details['passport_image_path'])) {
+            // Updated path for student header only
+            $user_profile_image = BASE_URL . 'uploads/verification/' . $user_details['passport_image_path'];
+        }
+    }
+}
 
 // Define the theme colors for consistent styling
 $sidebar_bg_color = "#1a202c"; // Darker shade for student sidebar
@@ -28,10 +67,9 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Dashboard - Assessment System</title>
-    <link rel="icon" type="image/png" href="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png"> <!-- Favicon added here -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png"> <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
@@ -138,7 +176,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
         </nav>
         <div class="p-4 border-t border-gray-700 text-sm">
             <div class="mb-2 text-sidebar-light">Welcome, <span class="font-semibold"><?php echo $logged_in_username; ?></span></div>
-            <a href="<?php echo BASE_URL; ?>auth/logout.php" class="block bg-red-600 text-white text-center py-2 rounded-md font-semibold hover:bg-red-700 transition duration-300">
+            <a href="<?php echo BASE_URL; ?>auth/logout.php" id="sidebarLogoutLink" class="block bg-red-600 text-white text-center py-2 rounded-md font-semibold hover:bg-red-700 transition duration-300">
                 <i class="fas fa-sign-out-alt mr-2"></i> Logout
             </a>
         </div>
@@ -146,23 +184,35 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
 
     <div class="flex-1 flex flex-col ml-64">
         <header class="bg-header p-4 shadow-md sticky top-0 z-30 border-b border-gray-200">
-            <div class="container mx-auto flex justify-between items-center">
-                <div class="flex items-center space-x-4">
-                    <button onclick="history.back()" class="bg-blue-50 text-blue-700 px-4 py-2 rounded-md hover:bg-blue-100 transition duration-300 flex items-center">
-                        <i class="fas fa-arrow-left mr-2"></i> Back
-                    </button>
+            <div class="container mx-auto flex justify-between items-center h-10">
+                <div class="flex items-center">
+                    <a href="javascript:history.back()" class="text-gray-600 hover:text-gray-800 mr-4">
+                        <i class="fas fa-arrow-left text-lg"></i>
+                    </a>
                     <h1 class="text-2xl font-bold text-gray-800">
                         <?php
                             $current_page = basename($_SERVER['PHP_SELF']);
                             $page_titles = [
-                                'dashboard.php' => ucfirst($logged_in_username) . "'s Dashboard", // Capitalize the first letter of username
-                                'assessments.php' => 'Assessments', // Updated filename
-                                'payments.php' => 'Payments',     // Updated filename
+                                'dashboard.php' => ucfirst($user_full_name) . "'s Dashboard", // Capitalize the first letter of username
+                                'assessments.php' => 'Assessments',
+                                'payments.php' => 'Payments',
                                 'profile.php' => 'Student Profile',
+                                 // Added settings page title
                             ];
                             echo $page_titles[$current_page] ?? 'Student Panel';
                         ?>
                     </h1>
+                </div>
+
+                <div class="relative flex items-center space-x-4 cursor-pointer" id="profileDropdownToggle">
+                    <img src="<?php echo $user_profile_image; ?>" alt="<?php echo $user_full_name; ?>" class="h-10 w-10 rounded-full object-cover">
+                    <span class="font-semibold text-gray-800 hidden md:block"><?php echo $user_full_name; ?></span>
+                    <i class="fas fa-chevron-down text-gray-400"></i>
+
+                    <div id="profileDropdownMenu" class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 hidden top-full">
+                        <a href="<?php echo BASE_URL; ?>student/profile.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">My Profile</a>
+                        <a href="<?php echo BASE_URL; ?>auth/logout.php" id="dropdownLogoutLink" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</a>
+                    </div>
                 </div>
             </div>
         </header>
@@ -189,5 +239,89 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                 // Call initializeSelect2 on document ready for initial page load
                 $(document).ready(function() {
                     initializeSelect2();
-                });
+
+                    // Profile dropdown toggle
+                    const profileDropdownToggle = document.getElementById('profileDropdownToggle');
+                    const profileDropdownMenu = document.getElementById('profileDropdownMenu');
+
+                    if (profileDropdownToggle && profileDropdownMenu) {
+                        profileDropdownToggle.addEventListener('click', function() {
+                            profileDropdownMenu.classList.toggle('hidden');
+                        });
+
+                        // Close the dropdown if the user clicks outside of it
+                        window.addEventListener('click', function(event) {
+                            if (!profileDropdownToggle.contains(event.target) && !profileDropdownMenu.contains(event.target)) {
+                                profileDropdownMenu.classList.add('hidden');
+                            }
+                        });
+                    }
+
+                    // --- Custom Logout Confirmation Modal Logic ---
+                    const logoutModal = document.getElementById('logoutConfirmModal');
+                    const cancelLogoutBtn = document.getElementById('cancelLogout');
+                    const confirmLogoutBtn = document.getElementById('confirmLogout');
+                    let logoutRedirectUrl = ''; // To store the URL to redirect to
+
+                    // Function to show the modal
+                    function showLogoutConfirmModal(event) {
+                        event.preventDefault(); // Prevent default link behavior
+                        logoutRedirectUrl = event.currentTarget.href; // Get the href from the clicked link
+                        logoutModal.classList.remove('hidden');
+                    }
+
+                    // Function to hide the modal
+                    function hideLogoutConfirmModal() {
+                        logoutModal.classList.add('hidden');
+                        logoutRedirectUrl = ''; // Clear the stored URL
+                    }
+
+                    // Attach event listeners to logout links
+                    document.getElementById('sidebarLogoutLink').addEventListener('click', showLogoutConfirmModal);
+                    document.getElementById('dropdownLogoutLink').addEventListener('click', showLogoutConfirmModal);
+
+                    // Attach event listeners to modal buttons
+                    cancelLogoutBtn.addEventListener('click', hideLogoutConfirmModal);
+                    confirmLogoutBtn.addEventListener('click', function() {
+                        hideLogoutConfirmModal();
+                        if (logoutRedirectUrl) {
+                            window.location.href = logoutRedirectUrl; // Redirect to logout page
+                        }
+                    });
+
+                    // Close modal if clicking outside the content area
+                    logoutModal.addEventListener('click', function(event) {
+                        if (event.target === logoutModal) {
+                            hideLogoutConfirmModal();
+                        }
+                    });
+
+                    // Optional: Close with Escape key
+                    document.addEventListener('keydown', function(event) {
+                        if (event.key === 'Escape' && !logoutModal.classList.contains('hidden')) {
+                            hideLogoutConfirmModal();
+                        }
+                    });
+                    // --- End Custom Logout Confirmation Modal Logic ---
+
+                }); // End of document.ready
             </script>
+
+            <div id="logoutConfirmModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center hidden z-50">
+                <div class="bg-white rounded-lg shadow-xl p-8 max-w-sm w-full mx-4">
+                    <div class="text-center mb-6">
+                        <i class="fas fa-sign-out-alt text-red-500 text-4xl mb-4"></i>
+                        <h3 class="text-2xl font-semibold text-gray-800">Confirm Logout</h3>
+                    </div>
+                    <p class="text-gray-700 text-center mb-8">Are you sure you want to log out of your student dashboard?</p>
+                    <div class="flex justify-center space-x-4">
+                        <button id="cancelLogout" type="button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition duration-300">
+                            Cancel
+                        </button>
+                        <button id="confirmLogout" type="button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+                            Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+            

@@ -16,7 +16,7 @@ $user_email = htmlspecialchars($current_user['email']);
 <div class="bg-white shadow-lg rounded-lg p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
         <h2 class="text-3xl font-bold text-gray-800">Attempts for User: <span class="text-theme-color"><?php echo $username; ?></span> (<?php echo $user_email; ?>)</h2>
-        <a href="view_results.php" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300 ease-in-out flex items-center">
+        <a href="results.php" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 transition duration-300 ease-in-out flex items-center">
             <i class="fas fa-arrow-left mr-2"></i> Back to Assessments
         </a>
     </div>
@@ -42,7 +42,7 @@ $user_email = htmlspecialchars($current_user['email']);
 
     <div class="bg-gray-100 p-6 rounded-lg shadow-inner mb-6">
         <h3 class="text-xl font-semibold text-gray-700 mb-4">Filter Attempts</h3>
-        <form action="view_results.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <form action="results.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <input type="hidden" name="view_user" value="<?php echo $user_id; ?>">
 
             <div>
@@ -90,7 +90,7 @@ $user_email = htmlspecialchars($current_user['email']);
                 <button type="submit" class="bg-theme-color text-white px-6 py-2 rounded-md hover:bg-theme-dark transition duration-300 ease-in-out flex items-center">
                     <i class="fas fa-filter mr-2"></i> Apply Filters
                 </button>
-                <a href="view_results.php?view_user=<?php echo $user_id; ?>" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center">
+                <a href="results.php?view_user=<?php echo $user_id; ?>" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center">
                     <i class="fas fa-undo mr-2"></i> Reset Filters
                 </a>
             </div>
@@ -103,7 +103,7 @@ $user_email = htmlspecialchars($current_user['email']);
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <a href="view_results.php?view_user=<?php echo $user_id; ?>&sort_by=quiz_title&sort_order=<?php echo ($sort_by === 'quiz_title' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
+                            <a href="results.php?view_user=<?php echo $user_id; ?>&sort_by=quiz_title&sort_order=<?php echo ($sort_by === 'quiz_title' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
                                 'assessment_id_detail' => $filter_assessment_id_detail,
                                 'completion_status' => $filter_completion_status,
                                 'score_min' => $filter_score_min,
@@ -118,7 +118,7 @@ $user_email = htmlspecialchars($current_user['email']);
                             </a>
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <a href="view_results.php?view_user=<?php echo $user_id; ?>&sort_by=score&sort_order=<?php echo ($sort_by === 'score' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
+                            <a href="results.php?view_user=<?php echo $user_id; ?>&sort_by=score&sort_order=<?php echo ($sort_by === 'score' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
                                 'assessment_id_detail' => $filter_assessment_id_detail,
                                 'completion_status' => $filter_completion_status,
                                 'score_min' => $filter_score_min,
@@ -133,7 +133,7 @@ $user_email = htmlspecialchars($current_user['email']);
                             </a>
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <a href="view_results.php?view_user=<?php echo $user_id; ?>&sort_by=start_time&sort_order=<?php echo ($sort_by === 'start_time' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
+                            <a href="results.php?view_user=<?php echo $user_id; ?>&sort_by=start_time&sort_order=<?php echo ($sort_by === 'start_time' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
                                 'assessment_id_detail' => $filter_assessment_id_detail,
                                 'completion_status' => $filter_completion_status,
                                 'score_min' => $filter_score_min,
@@ -148,7 +148,7 @@ $user_email = htmlspecialchars($current_user['email']);
                             </a>
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <a href="view_results.php?view_user=<?php echo $user_id; ?>&sort_by=end_time&sort_order=<?php echo ($sort_by === 'end_time' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
+                            <a href="results.php?view_user=<?php echo $user_id; ?>&sort_by=end_time&sort_order=<?php echo ($sort_by === 'end_time' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
                                 'assessment_id_detail' => $filter_assessment_id_detail,
                                 'completion_status' => $filter_completion_status,
                                 'score_min' => $filter_score_min,
@@ -163,7 +163,7 @@ $user_email = htmlspecialchars($current_user['email']);
                             </a>
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            <a href="view_results.php?view_user=<?php echo $user_id; ?>&sort_by=is_completed&sort_order=<?php echo ($sort_by === 'is_completed' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
+                            <a href="results.php?view_user=<?php echo $user_id; ?>&sort_by=is_completed&sort_order=<?php echo ($sort_by === 'is_completed' && $sort_order === 'ASC') ? 'DESC' : 'ASC'; ?>&<?php echo http_build_query(array_filter([
                                 'assessment_id_detail' => $filter_assessment_id_detail,
                                 'completion_status' => $filter_completion_status,
                                 'score_min' => $filter_score_min,
@@ -215,7 +215,7 @@ $user_email = htmlspecialchars($current_user['email']);
                                 <?php echo htmlspecialchars($attempt['image_count']); ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <a href="view_results.php?view_attempt=<?php echo $attempt['attempt_id']; ?>" class="text-theme-color hover:text-theme-dark inline-flex items-center">
+                                <a href="results.php?view_attempt=<?php echo $attempt['attempt_id']; ?>" class="text-theme-color hover:text-theme-dark inline-flex items-center">
                                     View Details <i class="fas fa-eye ml-1"></i>
                                 </a>
                             </td>

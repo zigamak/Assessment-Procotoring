@@ -34,7 +34,7 @@ if (!isset($results) || !isset($current_quiz) || !isset($all_users) || !isset($s
 
     <div class="bg-gray-100 p-6 rounded-lg shadow-inner mb-8">
         <h3 class="text-xl font-semibold text-gray-700 mb-4">Filter Attempts</h3>
-        <form action="view_results.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <form action="results.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <input type="hidden" name="view_quiz" value="<?php echo htmlspecialchars($current_quiz['quiz_id']); ?>">
 
             <div>
@@ -87,7 +87,7 @@ if (!isset($results) || !isset($current_quiz) || !isset($all_users) || !isset($s
                 <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center">
                     <i class="fas fa-filter mr-2"></i> Apply Filters
                 </button>
-                <a href="view_results.php?view_quiz=<?php echo htmlspecialchars($current_quiz['quiz_id']); ?>" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center">
+                <a href="results.php?view_quiz=<?php echo htmlspecialchars($current_quiz['quiz_id']); ?>" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center">
                     <i class="fas fa-undo mr-2"></i> Reset Filters
                 </a>
             </div>
@@ -145,7 +145,7 @@ if (!isset($results) || !isset($current_quiz) || !isset($all_users) || !isset($s
                                 </span>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <a href="view_results.php?view_attempt=<?php echo $attempt['attempt_id']; ?>" class="text-accent hover:text-blue-700 inline-flex items-center">
+                                <a href="results.php?view_attempt=<?php echo $attempt['attempt_id']; ?>" class="text-accent hover:text-blue-700 inline-flex items-center">
                                     View Details <i class="fas fa-arrow-right ml-1"></i>
                                 </a>
                             </td>

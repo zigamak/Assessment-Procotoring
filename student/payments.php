@@ -1,6 +1,6 @@
 <?php
 // student/payments.php
-// Displays the Payments for the logged-in student with filtering options.
+// Displays the Payments for the logged-in student with filtering options in a centered popup.
 
 require_once '../includes/session.php';
 require_once '../includes/db.php';
@@ -77,118 +77,173 @@ try {
     error_log("Payments Fetch Error: " . $e->getMessage());
     $message = display_message("Could not retrieve Payments. Please try again later.", "error");
 }
-
 ?>
 
-<div class="container mx-auto p-4 py-8 max-w-7xl">
-    <h1 class="text-3xl font-bold text-accent mb-6 text-center">Your Payments</h1>
-
-    <?php echo $message; // Display any feedback messages ?>
-
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Payments</h2>
-        <form action="payments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-                <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
-                <select name="quiz_id" id="quiz_id"
-                        class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
-                        data-placeholder="All Assessments" data-allow-clear="true">
-                    <option value=""></option>
-                    <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
-                        <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($quiz_filter['title']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Payments</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/heroicons@2.1.1/dist/heroicons.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-white shadow-md p-4 flex items-center justify-between fixed w-full z-10 top-0">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-indigo-600 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    </svg>
+                    Your Payments
+                </h1>
             </div>
-
             <div>
-                <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status:</label>
-                <select name="status" id="status" class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
-                    <option value="">All Statuses</option>
-                    <option value="completed" <?php echo ($filter_status === 'completed') ? 'selected' : ''; ?>>Completed</option>
-                    <option value="pending" <?php echo ($filter_status === 'pending') ? 'selected' : ''; ?>>Pending</option>
-                    <option value="failed" <?php echo ($filter_status === 'failed') ? 'selected' : ''; ?>>Failed</option>
-                    <option value="abandoned" <?php echo ($filter_status === 'abandoned') ? 'selected' : ''; ?>>Abandoned</option>
-                </select>
+                <a href="../logout.php" class="text-indigo-600 hover:text-indigo-800 font-semibold">Logout</a>
             </div>
+        </header>
 
-            <div>
-                <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
-                <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
-            </div>
+        <!-- Main Content -->
+        <main class="flex-1 p-4 lg:p-8 mt-16 w-full max-w-5xl mx-auto">
+            <?php echo $message; // Display any feedback messages ?>
 
-            <div>
-                <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
-                <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
-            </div>
-
-            <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
-                <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
-                    <i class="fas fa-filter mr-2"></i> Apply Filters
+            <!-- Filter Button -->
+            <div class="mb-8 flex justify-end">
+                <button onclick="toggleFilterModal()" class="bg-indigo-600 text-white px-6 py-2 rounded-full hover:bg-indigo-700 transition duration-300 flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1m-17 4h14m-5 4h5m-9 4h9"></path>
+                    </svg>
+                    Filter Payments
                 </button>
-                <a href="payments.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
-                    <i class="fas fa-undo mr-2"></i> Reset Filters
-                </a>
             </div>
-        </form>
+
+            <!-- Filter Modal -->
+            <div id="filterModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden transition-opacity duration-300">
+                <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-xl w-full transform transition-all duration-300 scale-100">
+                    <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1m-17 4h14m-5 4h5m-9 4h9"></path>
+                        </svg>
+                        Filter Payments
+                    </h2>
+                    <form action="payments.php" method="GET" class="grid grid-cols-1 gap-4">
+                        <div>
+                            <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment</label>
+                            <select name="quiz_id" id="quiz_id"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-600 focus:ring focus:ring-indigo-600 focus:ring-opacity-50">
+                                <option value="">All Assessments</option>
+                                <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
+                                    <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($quiz_filter['title']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select name="status" id="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-600 focus:ring focus:ring-indigo-600 focus:ring-opacity-50">
+                                <option value="">All Statuses</option>
+                                <option value="completed" <?php echo ($filter_status === 'completed') ? 'selected' : ''; ?>>Completed</option>
+                                <option value="pending" <?php echo ($filter_status === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                                <option value="failed" <?php echo ($filter_status === 'failed') ? 'selected' : ''; ?>>Failed</option>
+                                <option value="abandoned" <?php echo ($filter_status === 'abandoned') ? 'selected' : ''; ?>>Abandoned</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                            <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-600 focus:ring focus:ring-indigo-600 focus:ring-opacity-50">
+                        </div>
+                        <div>
+                            <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                            <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-600 focus:ring focus:ring-indigo-600 focus:ring-opacity-50">
+                        </div>
+                        <div class="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-4 mt-4">
+                            <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full hover:bg-indigo-700 transition duration-300 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1m-17 4h14m-5 4h5m-9 4h9"></path>
+                                </svg>
+                                Apply Filters
+                            </button>
+                            <a href="payments.php" class="bg-gray-600 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition duration-300 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Reset Filters
+                            </a>
+                            <button type="button" onclick="toggleFilterModal()" class="bg-gray-600 text-white px-6 py-2 rounded-full hover:bg-gray-700 transition duration-300 flex items-center">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Payments Table -->
+            <div class="bg-white p-6 rounded-2xl shadow-lg overflow-x-auto">
+                <?php if (empty($payments)): ?>
+                    <p class="text-center text-gray-600 py-8">No payment records found matching your criteria.</p>
+                <?php else: ?>
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction Ref.</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php foreach ($payments as $payment): ?>
+                            <tr class="hover:bg-gray-50 transition duration-200">
+                                <td class="px-4 py-4 whitespace-nowrap font-medium text-gray-900"><?php echo htmlspecialchars($payment['payment_id']); ?></td>
+                                <td class="px-4 py-4 whitespace-normal text-gray-900 max-w-xs"><?php echo htmlspecialchars($payment['quiz_title']); ?></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900">₦<?php echo number_format(htmlspecialchars($payment['amount']), 2); ?></td>
+                                <td class="px-4 py-4 whitespace-nowrap">
+                                    <?php
+                                        $status_class = '';
+                                        switch ($payment['status']) {
+                                            case 'completed': $status_class = 'bg-green-100 text-green-800'; break;
+                                            case 'pending': $status_class = 'bg-yellow-100 text-yellow-800'; break;
+                                            case 'failed': $status_class = 'bg-red-100 text-red-800'; break;
+                                            case 'abandoned': $status_class = 'bg-gray-100 text-gray-800'; break;
+                                            default: $status_class = 'bg-gray-100 text-gray-800'; break;
+                                        }
+                                    ?>
+                                    <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
+                                        <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+        </main>
     </div>
 
-    <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto"> <?php if (empty($payments)): ?>
-            <p class="text-center text-gray-600 py-8">No payment records found matching your criteria.</p>
-        <?php else: ?>
-            <table class="min-w-full divide-y divide-gray-200 text-sm"> <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th> <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction Ref.</th> <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($payments as $payment): ?>
-                    <tr>
-                        <td class="px-4 py-2 whitespace-nowrap font-medium text-gray-900"> <?php echo htmlspecialchars($payment['payment_id']); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-normal text-gray-900 max-w-xs">
-                            <?php echo htmlspecialchars($payment['quiz_title']); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            ₦<?php echo number_format(htmlspecialchars($payment['amount']), 2); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap">
-                            <?php
-                                $status_class = '';
-                                switch ($payment['status']) {
-                                    case 'completed': $status_class = 'bg-green-100 text-green-800'; break;
-                                    case 'pending': $status_class = 'bg-yellow-100 text-yellow-800'; break;
-                                    case 'failed': $status_class = 'bg-red-100 text-red-800'; break;
-                                    case 'abandoned': $status_class = 'bg-gray-100 text-gray-800'; break;
-                                    default: $status_class = 'bg-gray-100 text-gray-800'; break;
-                                }
-                            ?>
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
-                                <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
-                            </span>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            <?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            <?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </div>
+    <?php
+    // Include the student specific footer
+    require_once '../includes/footer_student.php';
+    ?>
 
-</div>
-
-<?php
-// Include the student specific footer
-require_once '../includes/footer_student.php';
-?>
+    <script>
+        function toggleFilterModal() {
+            const modal = document.getElementById('filterModal');
+            modal.classList.toggle('hidden');
+            modal.classList.toggle('flex');
+        }
+    </script>
+</body>
+</html>

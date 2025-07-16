@@ -1,6 +1,6 @@
-"What is the capital of France?",multiple_choice,1,,0,"Paris","Berlin","Rome","Madrid"
-"The Earth orbits the Sun.",true_false,1,,"True"
-"Who painted the Mona Lisa?",short_answer,2,,""
-"Explain the concept of supply and demand.",essay,10,,""
-"Which planet is known as the Red Planet?",multiple_choice,1,,0,"Mars","Jupiter","Venus","Saturn"
-"Is the sky blue?",true_false,1,,"True"
+Question Text,Question Type,Score,Option1,IsCorrect1,Option2,IsCorrect2,Option3,IsCorrect3,Option4,IsCorrect4
+What is the capital of France?,multiple_choice,10,Paris,1,London,0,Berlin,0,Madrid,0
+The Earth is flat?,true_false,5,True,0,False,1,,
+What is 2 + 2?,multiple_choice,8,4,1,3,0,5,0,22,0
+Is Python a programming language?,true_false,5,True,1,False,0,,
+Which planet is known as the Red Planet?,multiple_choice,10,Mars,1,Venus,0,Jupiter,0,Mercury,0

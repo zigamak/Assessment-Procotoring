@@ -1,5 +1,5 @@
 <?php
-// admin/view_results.php
+// admin/results.php
 // Controller for viewing assessment results, proctoring logs, and images.
 
 require_once '../includes/session.php';

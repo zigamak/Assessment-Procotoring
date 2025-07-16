@@ -31,6 +31,9 @@ $filter_min_percentage = filter_input(INPUT_GET, 'min_percentage', FILTER_VALIDA
 if ($filter_min_percentage !== false && $filter_min_percentage < 0) $filter_min_percentage = 0;
 if ($filter_min_percentage !== false && $filter_min_percentage > 100) $filter_min_percentage = 100;
 
+// --- Search Variable ---
+$search_query = sanitize_input($_GET['search'] ?? null);
+
 
 // Sanitize the input attempt_id from the GET request
 $view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
@@ -151,6 +154,11 @@ if (!$view_attempt_id) {
             $where_clauses[] = "DATE(qa.start_time) <= :end_date";
             $params['end_date'] = $filter_end_date;
         }
+        // Add search query to WHERE clause
+        if ($search_query) {
+            $where_clauses[] = "q.title LIKE :search_query";
+            $params['search_query'] = '%' . $search_query . '%';
+        }
 
         if (!empty($where_clauses)) {
             $sql .= " AND " . implode(" AND ", $where_clauses);
@@ -198,111 +206,212 @@ if (!$view_attempt_id) {
     <?php echo $message; // Display any feedback messages ?>
 
     <?php if ($view_attempt_id && isset($current_attempt) && $current_attempt): ?>
-        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Details for "<?php echo htmlspecialchars($current_attempt['quiz_title']); ?>"</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700 mb-6">
-                <p><strong>Attempt ID:</strong> <?php echo htmlspecialchars($current_attempt['attempt_id']); ?></p>
-                <p><strong>Started:</strong> <?php echo date('g:i A, F j, Y', strtotime($current_attempt['start_time'])); ?></p>
-                <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'N/A'; ?></p>
-                <p><strong>Status:</strong> <?php echo $current_attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></p>
-                <p><strong>Your Score:</strong> <?php echo htmlspecialchars($current_attempt['score'] ?? 'N/A'); ?> / <?php echo htmlspecialchars($current_attempt['max_possible_score'] ?? 'N/A'); ?></p>
-                <p><strong>Percentage Score:</strong> <span class="font-bold <?php echo ($current_attempt['percentage_score'] !== 'N/A' && $current_attempt['percentage_score'] >= 70) ? 'text-green-600' : 'text-red-600'; ?>"><?php echo htmlspecialchars($current_attempt['percentage_score']); ?>%</span></p>
+        <div class="flex flex-col md:flex-row justify-center items-start gap-8 mb-8">
+            <div class="flex-shrink-0 w-full md:w-80 p-6 rounded-3xl shadow-xl text-center text-white"
+                 style="background: linear-gradient(180deg, #6742F1 0%, #392B7D 100%);">
+                <h2 class="text-xl font-bold mb-6 opacity-80">Your Result</h2>
+                <div class="relative w-40 h-40 mx-auto mb-6 rounded-full flex items-center justify-center"
+                     style="background: linear-gradient(180deg, #4E23D7 0%, rgba(37, 24, 137, 0.8) 100%);">
+                    <span id="animatedScore" class="text-6xl font-bold">0</span>
+                    <span class="text-lg opacity-70 absolute bottom-8">%</span>
+                </div>
+                <h3 id="resultStatus" class="text-3xl font-bold mb-2"></h3>
+                <p id="resultFeedback" class="text-base opacity-80 px-4"></p>
             </div>
 
-            <h3 class="text-xl font-semibold text-gray-700 mb-3">Questions and Your Answers</h3>
-            <?php if (!empty($current_attempt['answers'])): ?>
-                <?php foreach ($current_attempt['answers'] as $answer): ?>
-                    <div class="border p-4 rounded-md bg-gray-50 mb-4">
-                        <p class="font-semibold text-gray-800">Q: <?php echo htmlspecialchars($answer['question_text']); ?> (Points: <?php echo htmlspecialchars($answer['question_score']); ?>)</p>
-                        <p class="text-sm text-gray-600">Type: <?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', $answer['question_type']))); ?></p>
-                        <?php if ($answer['question_type'] === 'multiple_choice'): ?>
-                            <p><strong>Your Selected Option:</strong> <?php echo htmlspecialchars($answer['selected_option_text'] ?? 'No answer'); ?></p>
-                            <?php
-                                // Parse the correct options data
-                                $correct_options_parsed = [];
-                                if (!empty($answer['correct_options_data'])) {
-                                    $options_raw = explode(';;', $answer['correct_options_data']);
-                                    foreach ($options_raw as $opt_str) {
-                                        // Ensure opt_str is not empty and contains '||' to prevent errors
-                                        if (strpos($opt_str, '||') !== false) {
-                                            list($opt_text, $is_correct_val) = explode('||', $opt_str, 2); // Limit split to 2
-                                            if ((bool)$is_correct_val) {
-                                                $correct_options_parsed[] = $opt_text;
-                                            }
-                                        }
-                                    }
-                                }
-                            ?>
-                            <p><strong>Correct Answer(s):</strong> <?php echo !empty($correct_options_parsed) ? htmlspecialchars(implode(', ', $correct_options_parsed)) : 'N/A'; ?></p>
-                            <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
-                        <?php elseif ($answer['question_type'] === 'true_false' || $answer['question_type'] === 'short_answer'): ?>
-                            <p><strong>Your Answer:</strong> <?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></p>
-                            <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
-                        <?php elseif ($answer['question_type'] === 'essay'): ?>
-                            <p><strong>Your Answer:</strong></p>
-                            <div class="bg-gray-100 p-3 rounded-md border text-gray-700 whitespace-pre-wrap"><?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></div>
-                            <p class="text-sm text-gray-600 mt-2"><em>This question requires manual grading by an administrator.</em></p>
-                        <?php endif; ?>
-                    </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <p class="text-gray-600">No answers recorded for this attempt yet, or there was an issue retrieving them.</p>
-            <?php endif; ?>
-
-            <div class="mt-8">
-                <a href="assessments.php" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition duration-300">
-                    &larr; Back to All Attempts
-                </a>
+            <div class="flex-grow bg-white p-6 rounded-3xl shadow-xl w-full">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Assessment Details: "<?php echo htmlspecialchars($current_attempt['quiz_title']); ?>"</h2>
+                <div class="space-y-3 text-gray-700 mb-6">
+                    <p><strong>Attempt ID:</strong> <?php echo htmlspecialchars($current_attempt['attempt_id']); ?></p>
+                    <p><strong>Started:</strong> <?php echo date('g:i A, F j, Y', strtotime($current_attempt['start_time'])); ?></p>
+                    <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'N/A'; ?></p>
+                    <p><strong>Status:</strong> <?php echo $current_attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></p>
+                    <p><strong>Overall Score:</strong> <?php echo htmlspecialchars(sprintf('%.2f', $current_attempt['score'] ?? 0)); ?> / <?php echo htmlspecialchars($current_attempt['max_possible_score'] ?? 0); ?></p>
+                </div>
+                <div class="mt-8 text-center">
+                    <button id="toggleAnswersButton" class="inline-block w-full bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300">
+                        <i class="fas fa-eye mr-2"></i> View Questions & Answers
+                    </button>
+                </div>
             </div>
         </div>
 
-    <?php else: ?>
         <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Quiz Attempts</h2>
-            <form action="assessments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                    <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
-                    <select name="quiz_id" id="quiz_id"
-                            class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
-                            data-placeholder="All Assessments" data-allow-clear="true">
-                        <option value=""></option>
-                        <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
-                            <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($quiz_filter['title']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
+            <div id="questionsAnswersSection" class="hidden">
+                <h3 class="text-xl font-semibold text-gray-700 mb-3">Questions and Your Answers</h3>
+                <?php if (!empty($current_attempt['answers'])): ?>
+                    <?php foreach ($current_attempt['answers'] as $answer): ?>
+                        <div class="border p-4 rounded-md bg-gray-50 mb-4">
+                            <p class="font-semibold text-gray-800">Q: <?php echo htmlspecialchars($answer['question_text']); ?> (Points: <?php echo htmlspecialchars($answer['question_score']); ?>)</p>
+                            <p class="text-sm text-gray-600">Type: <?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', $answer['question_type']))); ?></p>
+                            <?php if ($answer['question_type'] === 'multiple_choice'): ?>
+                                <p><strong>Your Selected Option:</strong> <?php echo htmlspecialchars($answer['selected_option_text'] ?? 'No answer'); ?></p>
+                                <?php
+                                    // Parse the correct options data
+                                    $correct_options_parsed = [];
+                                    if (!empty($answer['correct_options_data'])) {
+                                        $options_raw = explode(';;', $answer['correct_options_data']);
+                                        foreach ($options_raw as $opt_str) {
+                                            // Ensure opt_str is not empty and contains '||' to prevent errors
+                                            if (strpos($opt_str, '||') !== false) {
+                                                list($opt_text, $is_correct_val) = explode('||', $opt_str, 2); // Limit split to 2
+                                                if ((bool)$is_correct_val) {
+                                                    $correct_options_parsed[] = $opt_text;
+                                                }
+                                            }
+                                        }
+                                    }
+                                ?>
+                                <p><strong>Correct Answer(s):</strong> <?php echo !empty($correct_options_parsed) ? htmlspecialchars(implode(', ', $correct_options_parsed)) : 'N/A'; ?></p>
+                                <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
+                            <?php elseif ($answer['question_type'] === 'true_false' || $answer['question_type'] === 'short_answer'): ?>
+                                <p><strong>Your Answer:</strong> <?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></p>
+                                <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
+                            <?php elseif ($answer['question_type'] === 'essay'): ?>
+                                <p><strong>Your Answer:</strong></p>
+                                <div class="bg-gray-100 p-3 rounded-md border text-gray-700 whitespace-pre-wrap"><?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></div>
+                                <p class="text-sm text-gray-600 mt-2"><em>This question requires manual grading by an administrator.</em></p>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p class="text-gray-600">No answers recorded for this attempt yet, or there was an issue retrieving them.</p>
+                <?php endif; ?>
+           </div>
+        </div>
 
-                <div>
-                    <label for="min_percentage" class="block text-sm font-medium text-gray-700 mb-1">Min. Percentage (%):</label>
-                    <input type="number" name="min_percentage" id="min_percentage" min="0" max="100" step="any"
-                           value="<?php echo htmlspecialchars($filter_min_percentage); ?>"
-                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50"
-                           placeholder="e.g., 70">
-                </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const scoreElement = document.getElementById('animatedScore');
+                const resultStatusElement = document.getElementById('resultStatus');
+                const resultFeedbackElement = document.getElementById('resultFeedback');
+                // Ensure percentage_score is a number for animation, default to 0 if 'N/A'
+                const finalScore = <?php echo json_encode($current_attempt['percentage_score'] !== 'N/A' ? (int)$current_attempt['percentage_score'] : 0); ?>;
+                const duration = 1500; // milliseconds
+                const start = 0;
+                let startTime = null;
 
-                <div>
-                    <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
-                    <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
-                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
-                </div>
+                function animateScore(currentTime) {
+                    if (!startTime) startTime = currentTime;
+                    const progress = Math.min((currentTime - startTime) / duration, 1);
+                    const currentScore = Math.floor(progress * (finalScore - start) + start);
+                    scoreElement.textContent = currentScore; // Set the number
+                    document.querySelector('#animatedScore + span').textContent = '%'; // Set the % sign
 
-                <div>
-                    <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
-                    <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
-                           class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
-                </div>
+                    if (progress < 1) {
+                        requestAnimationFrame(animateScore);
+                    } else {
+                        // Set final status and feedback
+                        if (finalScore >= 70) {
+                            resultStatusElement.textContent = 'Great';
+                            // Dynamic feedback based on score, adjust as needed
+                            resultFeedbackElement.textContent = 'You scored higher than ' + Math.max(0, finalScore - 5) + '% of the people who have taken these tests.';
+                        } else {
+                            resultStatusElement.textContent = 'Needs Improvement';
+                            resultFeedbackElement.textContent = 'Keep practicing! Review your answers to improve for next time.';
+                        }
+                    }
+                }
 
-                <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
-                    <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
-                        <i class="fas fa-filter mr-2"></i> Apply Filters
+                if (finalScore !== 'N/A') {
+                    requestAnimationFrame(animateScore);
+                } else {
+                    scoreElement.textContent = 'N/A';
+                    document.querySelector('#animatedScore + span').textContent = ''; // Clear % for N/A
+                    resultStatusElement.textContent = 'Not Completed';
+                    resultFeedbackElement.textContent = 'This assessment was not completed.';
+                }
+
+                // Toggle visibility for Questions & Answers
+                const toggleButton = document.getElementById('toggleAnswersButton');
+                const questionsAnswersSection = document.getElementById('questionsAnswersSection');
+
+                toggleButton.addEventListener('click', function() {
+                    questionsAnswersSection.classList.toggle('hidden');
+                    if (questionsAnswersSection.classList.contains('hidden')) {
+                        toggleButton.innerHTML = '<i class="fas fa-eye mr-2"></i> View Questions & Answers';
+                    } else {
+                        toggleButton.innerHTML = '<i class="fas fa-eye-slash mr-2"></i> Hide Questions & Answers';
+                    }
+                });
+            });
+        </script>
+
+    <?php else: ?>
+        <div class="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 mb-4">
+            <div class="relative flex-grow">
+    <input type="text" name="search" id="search_input"
+           value="<?php echo htmlspecialchars($search_query); ?>"
+           class="form-input w-3/4 rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 pl-10 py-3 text-lg"
+           placeholder="Search assessments...">
+    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+        <i class="fas fa-search"></i>
+    </span>
+</div>
+            <button id="openFilterModal" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-300 flex items-center justify-center sm:w-auto w-full">
+                <i class="fas fa-filter mr-2"></i> Filter
+            </button>
+             <a href="assessments.php" class="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center sm:w-auto w-full">
+                <i class="fas fa-undo mr-2"></i> Reset
+            </a>
+        </div>
+
+
+        <div id="filterModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg mx-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">Filter Quiz Attempts</h2>
+                    <button id="closeFilterModal" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
                     </button>
-                    <a href="assessments.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
-                        <i class="fas fa-undo mr-2"></i> Reset Filters
-                    </a>
                 </div>
-            </form>
+                <form id="filterForm" action="assessments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="hidden" name="search" id="modal_search_input" value="<?php echo htmlspecialchars($search_query); ?>">
+
+                    <div>
+                        <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
+                        <select name="quiz_id" id="quiz_id"
+                                class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
+                                data-placeholder="All Assessments" data-allow-clear="true">
+                            <option value=""></option>
+                            <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
+                                <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($quiz_filter['title']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="min_percentage" class="block text-sm font-medium text-gray-700 mb-1">Min. Percentage (%):</label>
+                        <input type="number" name="min_percentage" id="min_percentage" min="0" max="100" step="any"
+                               value="<?php echo htmlspecialchars($filter_min_percentage); ?>"
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50"
+                               placeholder="e.g., 70">
+                    </div>
+
+                    <div>
+                        <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
+                        <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                    </div>
+
+                    <div>
+                        <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
+                        <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
+                               class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                    </div>
+
+                    <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
+                        <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
+                            <i class="fas fa-filter mr-2"></i> Apply Filters
+                        </button>
+                        <button type="button" id="resetFiltersModal" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
+                            <i class="fas fa-undo mr-2"></i> Reset Filters
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
@@ -315,13 +424,15 @@ if (!$view_attempt_id) {
                     </a>
                 </div>
             <?php else: ?>
-                <table class="min-w-full divide-y divide-gray-200 text-sm"> <thead class="bg-gray-50">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th> <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score (%)</th>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
                             <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            <th scope="col" class="px-4 py-2 whitespace-nowrap text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
@@ -348,6 +459,83 @@ if (!$view_attempt_id) {
                 </table>
             <?php endif; ?>
         </div>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const openFilterModalBtn = document.getElementById('openFilterModal');
+                const closeFilterModalBtn = document.getElementById('closeFilterModal');
+                const filterModal = document.getElementById('filterModal');
+                const searchInput = document.getElementById('search_input');
+                const modalSearchInput = document.getElementById('modal_search_input');
+                const filterForm = document.getElementById('filterForm');
+                const resetFiltersModalBtn = document.getElementById('resetFiltersModal');
+
+                openFilterModalBtn.addEventListener('click', function() {
+                    // Sync the main search input value to the hidden modal input before opening
+                    modalSearchInput.value = searchInput.value;
+                    filterModal.classList.remove('hidden');
+                });
+
+                closeFilterModalBtn.addEventListener('click', function() {
+                    filterModal.classList.add('hidden');
+                });
+
+                // Optional: Close modal if user clicks outside of it
+                filterModal.addEventListener('click', function(event) {
+                    if (event.target === filterModal) {
+                        filterModal.classList.add('hidden');
+                    }
+                });
+
+                // When the main search input changes, update the hidden input in the modal form
+                searchInput.addEventListener('input', function() {
+                    modalSearchInput.value = searchInput.value;
+                });
+
+                // Handle the main search input submission (e.g., press Enter)
+                searchInput.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter') {
+                        event.preventDefault(); // Prevent default form submission if input is part of a form
+                        // Construct the URL with current search query and existing filters
+                        const currentParams = new URLSearchParams(window.location.search);
+                        currentParams.set('search', searchInput.value);
+                        // Remove attempt_id if present to ensure overview
+                        currentParams.delete('attempt_id');
+                        window.location.search = currentParams.toString();
+                    }
+                });
+
+                // Handle Reset Filters button inside the modal
+                resetFiltersModalBtn.addEventListener('click', function() {
+                    // Reset all filter fields in the modal
+                    document.getElementById('quiz_id').value = '';
+                    document.getElementById('min_percentage').value = '';
+                    document.getElementById('start_date').value = '';
+                    document.getElementById('end_date').value = '';
+                    // Also reset the hidden search input if you want a full reset from the modal
+                    modalSearchInput.value = '';
+
+                    // If Select2 is used, trigger change event to update its display
+                    if (typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
+                        $('#quiz_id').val(null).trigger('change');
+                    }
+
+                    // Manually submit the form to clear filters
+                    filterForm.submit();
+                });
+
+
+                // Initialize Select2 if it's used elsewhere (assuming this is part of a larger system)
+                if (typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
+                    $('.select2-enabled').select2({
+                        placeholder: $(this).data('placeholder'),
+                        allowClear: $(this).data('allow-clear') || false,
+                        dropdownParent: filterModal // Ensure dropdown appears within the modal
+                    });
+                }
+            });
+        </script>
+
     <?php endif; ?>
 
 </div>

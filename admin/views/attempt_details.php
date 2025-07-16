@@ -3,7 +3,7 @@
 // View for detailed attempt information
 ?>
 <div class="mb-6 text-left">
-    <a href="view_results.php?view_quiz=<?php echo htmlspecialchars($current_attempt['quiz_id']); ?>" class="inline-block bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition duration-300 text-sm font-semibold shadow-sm">
+    <a href="results.php?view_quiz=<?php echo htmlspecialchars($current_attempt['quiz_id']); ?>" class="inline-block bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition duration-300 text-sm font-semibold shadow-sm">
         ← Back to Assessment Attempts
     </a>
 </div>

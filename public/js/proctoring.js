@@ -15,6 +15,8 @@ let fullscreenCountdownTimer = null;
 let fullscreenSecondsLeft = 0;
 const FULLSCREEN_GRACE_DURATION = 30;
 let isFullscreenCountdownActive = false;
+let fullscreenViolationCount = 0; // New: Track fullscreen violations
+const MAX_FULLSCREEN_VIOLATIONS = 3; // New: Max allowed fullscreen violations
 
 let tabSwitchCount = 0;
 let tabSwitchTimer = null;
@@ -342,7 +344,7 @@ function showTabWarningPopup() {
 }
 
 function hideTabWarningPopup() {
-    if (DOM.tabSwitchWarningOverlay && !document.hidden) { // Only hide if user is back on tab
+    if (DOM.tabSwitchWarningOverlay && !document.hidden) {
         DOM.tabSwitchWarningOverlay.classList.add('hidden');
         DOM.tabSwitchWarningOverlay.classList.remove('active');
         clearTabSwitchTimer();
@@ -391,7 +393,10 @@ function startFullscreenCountdown() {
     if (isFullscreenCountdownActive) return;
     isFullscreenCountdownActive = true;
     fullscreenSecondsLeft = FULLSCREEN_GRACE_DURATION;
-    DOM.fullscreenCountdownText.textContent = `Return to fullscreen in ${fullscreenSecondsLeft}s...`;
+    fullscreenViolationCount++; // Increment violation count
+    sendProctoringLogCallback('fullscreen_violation', { count: fullscreenViolationCount, max: MAX_FULLSCREEN_VIOLATIONS });
+
+    DOM.fullscreenCountdownText.textContent = `Return to fullscreen in ${fullscreenSecondsLeft}s. You have ${MAX_FULLSCREEN_VIOLATIONS - fullscreenViolationCount} warning${MAX_FULLSCREEN_VIOLATIONS - fullscreenViolationCount === 1 ? '' : 's'} remaining.`;
     DOM.proctoringFullscreenPromptOverlay.classList.remove('hidden');
     DOM.proctoringFullscreenPromptOverlay.classList.add('active');
 
@@ -401,12 +406,22 @@ function startFullscreenCountdown() {
             clearInterval(fullscreenCountdownTimer);
             fullscreenCountdownTimer = null;
             isFullscreenCountdownActive = false;
-            triggerProctoringCriticalError(`Failed to return to fullscreen within ${FULLSCREEN_GRACE_DURATION}s.`);
+            if (!document.fullscreenElement) {
+                const assessmentForm = document.querySelector('form');
+                if (assessmentForm) {
+                    showProctoringAutoSubmitModal(`Assessment submitted due to excessive fullscreen violations (${fullscreenViolationCount}/${MAX_FULLSCREEN_VIOLATIONS}).`);
+                    assessmentForm.submit();
+                    sendProctoringLogCallback('form_submitted', 'Submitted due to excessive fullscreen violations.');
+                } else {
+                    triggerProctoringCriticalError("Assessment form not found after excessive fullscreen violations.");
+                }
+            }
         } else {
-            DOM.fullscreenCountdownText.textContent = `Return to fullscreen in ${fullscreenSecondsLeft}s...`;
+            DOM.fullscreenCountdownText.textContent = `Return to fullscreen in ${fullscreenSecondsLeft}s. You have ${MAX_FULLSCREEN_VIOLATIONS - fullscreenViolationCount} warning${MAX_FULLSCREEN_VIOLATIONS - fullscreenViolationCount === 1 ? '' : 's'} remaining.`;
+            updateProctoringStatus(`Warning: You exited fullscreen ${fullscreenViolationCount} time${fullscreenViolationCount === 1 ? '' : 's'} (${fullscreenViolationCount}/${MAX_FULLSCREEN_VIOLATIONS}). Return in ${fullscreenSecondsLeft}s.`, 'warning');
         }
     }, 1000);
-    sendProctoringLogCallback('fullscreen_countdown_started', { duration: FULLSCREEN_GRACE_DURATION });
+    sendProctoringLogCallback('fullscreen_countdown_started', { duration: FULLSCREEN_GRACE_DURATION, count: fullscreenViolationCount });
 }
 
 function clearFullscreenCountdown() {
@@ -418,6 +433,9 @@ function clearFullscreenCountdown() {
         DOM.fullscreenCountdownText.textContent = `Remain in fullscreen mode.`;
         DOM.proctoringFullscreenPromptOverlay.classList.add('hidden');
         DOM.proctoringFullscreenPromptOverlay.classList.remove('active');
+        if (proctoringGracePeriodReason.includes("fullscreen")) {
+            clearProctoringGracePeriod();
+        }
         sendProctoringLogCallback('fullscreen_countdown_cleared', 'Returned to fullscreen.');
     }
 }
@@ -453,7 +471,6 @@ function updateProctoringConditions() {
     if (isFullscreen && isTabVisible && isModelLoaded && isCameraReady && !proctoringGracePeriodTimer) {
         clearFullscreenCountdown();
         clearTabSwitchTimer();
-
         DOM.startAssessmentOverlay?.classList.add('hidden');
 
         if (!proctoringDetectionActive) {
@@ -472,11 +489,13 @@ function updateProctoringConditions() {
         onProctoringConditionsViolatedCallback();
 
         if (!isFullscreen) {
-            updateProctoringStatus("Please enter fullscreen mode.", 'info');
-            startFullscreenCountdown();
+            updateProctoringStatus(`Warning: You exited fullscreen ${fullscreenViolationCount} time${fullscreenViolationCount === 1 ? '' : 's'} (${fullscreenViolationCount}/${MAX_FULLSCREEN_VIOLATIONS}).`, 'warning');
+            if (!isFullscreenCountdownActive && fullscreenViolationCount <= MAX_FULLSCREEN_VIOLATIONS) {
+                startFullscreenCountdown();
+            }
         } else if (!isTabVisible) {
             updateProctoringStatus(`Warning: You left the assessment tab ${tabSwitchCount} time${tabSwitchCount === 1 ? '' : 's'} (${tabSwitchCount}/${MAX_TAB_SWITCHES}).`, 'warning');
-            if (!tabSwitchTimer && tabSwitchCount < MAX_TAB_SWITCHES) {
+            if (!tabSwitchTimer && tabSwitchCount <= MAX_TAB_SWITCHES) {
                 startTabSwitchTimer();
             }
         } else if (!isModelLoaded || !isCameraReady) {
@@ -537,8 +556,14 @@ async function reEnterFullscreenFromPrompt() {
 function cancelAssessmentFromFullscreenPrompt() {
     DOM.proctoringFullscreenPromptOverlay.classList.add('hidden');
     DOM.proctoringFullscreenPromptOverlay.classList.remove('active');
-    triggerProctoringCriticalError("User canceled the assessment.");
-    sendProctoringLogCallback('assessment_canceled', 'User canceled assessment.');
+    const assessmentForm = document.querySelector('form');
+    if (assessmentForm) {
+        showProctoringAutoSubmitModal("Assessment submitted due to user cancellation from fullscreen prompt.");
+        assessmentForm.submit();
+        sendProctoringLogCallback('form_submitted', 'Submitted due to user cancellation from fullscreen prompt.');
+    } else {
+        triggerProctoringCriticalError("Assessment form not found. User canceled the assessment.");
+    }
 }
 
 function handleFullscreenChange() {
@@ -551,7 +576,6 @@ function handleFullscreenChange() {
 
 function handleVisibilityChange() {
     if (!document.hidden) {
-        // User returned to the tab, but don't hide popup here; wait for button click
         updateProctoringConditions();
     } else {
         tabSwitchCount++;
@@ -565,7 +589,7 @@ function handleVisibilityChange() {
                 assessmentForm.submit();
                 sendProctoringLogCallback('form_submitted', 'Submitted due to excessive tab switches.');
             } else {
-                triggerProctoringCriticalError("Assessment form not found after excessive tab switches. Quiz may need manual termination.");
+                triggerProctoringCriticalError("Assessment form not found after excessive tab switches.");
             }
         } else {
             startTabSwitchTimer();
