@@ -262,11 +262,10 @@ if (!isset($phpFileUploadErrors)) {
                         $image_display_src = htmlspecialchars($image_full_path);
 
                         // Construct the file system path for file_exists check
-                        // This assumes $_SERVER['DOCUMENT_ROOT'] is 'C:/xampp/htdocs'
-                        // and your application root is 'C:/xampp/htdocs/assessment/'
-                        // So we append the full $image['image_path'] to the application's file system root
-                        $file_system_base_dir = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/assessment/';
-                        $file_system_path = $file_system_base_dir . $image['image_path'];
+                        // Based on the error, it seems $_SERVER['DOCUMENT_ROOT'] already points to
+                        // the 'assessment' directory (e.g., /home/.../public_html/assessment/)
+                        // So we just append the image_path directly to DOCUMENT_ROOT.
+                        $file_system_path = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/' . $image['image_path'];
 
                         // Check if the file exists on the server's file system
                         $file_exists = file_exists($file_system_path) && is_file($file_system_path);

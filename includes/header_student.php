@@ -32,7 +32,19 @@ if (!function_exists('fetchUserDetails')) {
 
 $user_details = null;
 $user_full_name = $logged_in_username; // Default to username
-$user_profile_image = BASE_URL . 'assets/images/default_profile.png'; // Default placeholder image path (adjust as needed for students)
+
+// Define the placeholder image URL
+// IMPORTANT: Make sure this path actually leads to an image file in your project.
+// For example, if you have 'assets/images/default_profile.png'
+$placeholder_image_url = BASE_URL . 'assets/images/default_profile.png';
+// The URL you provided 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSQY2wp4iDIst2_iF51miozA4fRKgS8TnnxCw&s'
+// is an external URL. While it works, it's generally better practice to use a local placeholder.
+// If you prefer the external URL, use it directly here:
+// $placeholder_image_url = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSQY2wp4iDIst2_iF51miozA4fRKg58TnnxCw&s';
+
+
+$user_profile_image = $placeholder_image_url; // Default to placeholder
+
 
 if ($logged_in_user_id && isset($pdo)) { // Ensure $pdo is available from db.php
     $user_details = fetchUserDetails($pdo, $logged_in_user_id);
@@ -45,8 +57,10 @@ if ($logged_in_user_id && isset($pdo)) { // Ensure $pdo is available from db.php
             $user_full_name = htmlspecialchars($user_details['username'] ?? 'Student');
         }
 
+        // Check if a passport image path exists and is not empty
         if (!empty($user_details['passport_image_path'])) {
-            // Updated path for student header only
+            // Construct the full URL for the uploaded image
+            // Assumes 'uploads/verification/' is directly under your BASE_URL document root
             $user_profile_image = BASE_URL . 'uploads/verification/' . $user_details['passport_image_path'];
         }
     }
@@ -67,7 +81,8 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Student Dashboard - Assessment System</title>
-    <link rel="icon" type="image/png" href="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png"> <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/png" href="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png">
+    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
@@ -197,7 +212,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                                 'assessments.php' => 'Assessments',
                                 'payments.php' => 'Payments',
                                 'profile.php' => 'Student Profile',
-                                 // Added settings page title
+                                // Added settings page title (though not in student sidebar, might be a future consideration)
                             ];
                             echo $page_titles[$current_page] ?? 'Student Panel';
                         ?>
@@ -273,7 +288,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     // Function to hide the modal
                     function hideLogoutConfirmModal() {
                         logoutModal.classList.add('hidden');
-                        logoutRedirectUrl = ''; // Clear the stored URL
+                        // logoutRedirectUrl = ''; // IMPORTANT: Do NOT clear the URL here if you want the redirect to happen immediately after confirmation.
                     }
 
                     // Attach event listeners to logout links
@@ -283,10 +298,10 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     // Attach event listeners to modal buttons
                     cancelLogoutBtn.addEventListener('click', hideLogoutConfirmModal);
                     confirmLogoutBtn.addEventListener('click', function() {
-                        hideLogoutConfirmModal();
                         if (logoutRedirectUrl) {
-                            window.location.href = logoutRedirectUrl; // Redirect to logout page
+                            window.location.href = logoutRedirectUrl; // Redirect to logout page FIRST
                         }
+                        hideLogoutConfirmModal(); // Then hide the modal (though the page will be navigating away)
                     });
 
                     // Close modal if clicking outside the content area
@@ -324,4 +339,3 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     </div>
                 </div>
             </div>
-            

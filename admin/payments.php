@@ -96,18 +96,215 @@ try {
 
 ?>
 
-<div class="container mx-auto p-4 py-8 max-w-7xl">
-    <h1 class="text-3xl font-bold text-accent mb-6 text-center">Manage Payments</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Payments - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
-    <?php echo $message; // Display any feedback messages ?>
+    <style>
+        /* Custom styles for the sidebar and Select2 overrides */
 
-    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Filter Payments</h2>
-        <form action="payments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        /* Sidebar transition and initial hidden state */
+        .sidebar-filter {
+            transform: translateX(100%);
+            transition: transform 0.3s ease-out;
+            z-index: 1000; /* Ensure it's above other content */
+        }
+        .sidebar-filter.open {
+            transform: translateX(0);
+        }
+
+        /* Overlay transition */
+        .overlay {
+            transition: opacity 0.3s ease-out;
+            z-index: 999; /* Below sidebar, above content */
+        }
+
+        /* Select2 custom styling to match Tailwind forms */
+        .select2-container--default .select2-selection--single {
+            border: 1px solid #d1d5db; /* Tailwind's border-gray-300 */
+            border-radius: 0.375rem; /* Tailwind's rounded-md */
+            height: 2.5rem; /* Equivalent to input h-10 or py-2 */
+            display: flex; /* For proper alignment of text and arrow */
+            align-items: center;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            color: #1f2937; /* Default text-gray-900 */
+            padding-left: 0.75rem; /* px-3 */
+            line-height: 1.5; /* Match default input line-height */
+            flex-grow: 1; /* Allow text to take available space */
+            white-space: normal; /* Allow text wrapping */
+            overflow-wrap: break-word; /* Ensure long words break */
+            display: block; /* Important for white-space to work reliably */
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__placeholder {
+            color: #6b7280; /* Tailwind's text-gray-500 */
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px; /* Adjust arrow width */
+            padding-right: 0.5rem;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__clear {
+            position: absolute; /* Position clear button */
+            right: 2rem; /* Adjust as needed to not overlap arrow */
+            top: 50%;
+            transform: translateY(-50%);
+            padding: 0 0.5rem;
+            font-size: 1.25rem; /* text-xl */
+            color: #9ca3af; /* text-gray-400 */
+        }
+
+        /* Focus styles for Select2 */
+        .select2-container--default.select2-container--focus .select2-selection--single {
+            border-color: #3b82f6; /* Assuming accent is a blue */
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); /* focus:ring-accent */
+        }
+
+        /* Dropdown specific styles */
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+            background-color: #3b82f6; /* bg-accent */
+            color: white;
+        }
+
+        .select2-container--default .select2-results__option--selected {
+            background-color: #e0f2fe; /* bg-blue-50 */
+            color: #1f2937;
+        }
+
+        /* Ensure Select2 dropdown width is dynamic */
+        .select2-container {
+            width: 100% !important; /* Important for fitting into grid/flex parents */
+        }
+        .select2-container--open .select2-dropdown {
+            min-width: 250px; /* Ensure dropdown is not too narrow */
+            width: auto !important; /* Allow it to expand to content */
+        }
+
+        /* Responsive table scrolling */
+        .overflow-x-auto table {
+            min-width: 768px; /* Ensures table doesn't shrink too much on small screens */
+        }
+
+        /* Customize scrollbar for aesthetics (optional) */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+    <?php // require_once '../includes/header_admin.php'; // Included at the top ?>
+
+    <div class="container mx-auto p-4 py-8 max-w-7xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Manage Payments</h1>
+
+        <?php echo $message; // Display any feedback messages ?>
+
+        <div class="mb-6 flex justify-end">
+            <button id="openFilterSidebar" class="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center space-x-2">
+                <i class="fas fa-filter text-lg"></i>
+                <span class="text-lg font-semibold">Filter Payments</span>
+            </button>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow-md overflow-hidden">
+            <?php if (empty($payments)): ?>
+                <p class="text-center text-gray-600 py-8 text-lg">No payment records found matching your criteria.</p>
+            <?php else: ?>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction Ref.</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php foreach ($payments as $payment): ?>
+                            <tr>
+                                <td class="px-4 py-2 whitespace-nowrap font-medium text-gray-900">
+                                    <?php echo htmlspecialchars($payment['payment_id']); ?>
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-gray-900">
+                                    <?php echo htmlspecialchars($payment['student_username']); ?>
+                                </td>
+                                <td class="px-4 py-2 whitespace-normal text-gray-900 max-w-xs break-words">
+                                    <?php echo htmlspecialchars($payment['quiz_title']); ?>
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-gray-900">
+                                    ₦<?php echo number_format(htmlspecialchars($payment['amount']), 2); ?>
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap">
+                                    <?php
+                                        $status_class = '';
+                                        switch ($payment['status']) {
+                                            case 'completed': $status_class = 'bg-green-100 text-green-800'; break;
+                                            case 'pending': $status_class = 'bg-yellow-100 text-yellow-800'; break;
+                                            case 'failed': $status_class = 'bg-red-100 text-red-800'; break;
+                                            case 'abandoned': $status_class = 'bg-gray-100 text-gray-800'; break;
+                                            default: $status_class = 'bg-gray-100 text-gray-800'; break;
+                                        }
+                                    ?>
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
+                                        <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-gray-900">
+                                    <?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?>
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-gray-900">
+                                    <?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div id="filterSidebar" class="sidebar-filter fixed top-0 right-0 h-full w-full md:w-96 bg-white shadow-xl flex flex-col pt-4 md:pt-0">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+            <h2 class="text-2xl font-semibold text-gray-800">Filter Options</h2>
+            <button id="closeFilterSidebar" class="text-gray-500 hover:text-gray-700 text-2xl p-2 rounded-full hover:bg-gray-100 transition duration-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form action="payments.php" method="GET" class="flex-grow p-6 overflow-y-auto space-y-6">
             <div>
-                <label for="user_id" class="block text-sm font-medium text-gray-700 mb-1">Student:</label>
+                <label for="user_id" class="block text-sm font-medium text-gray-700 mb-2">Student:</label>
                 <select name="user_id" id="user_id"
-                        class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
+                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 select2-enabled"
                         data-placeholder="All Students" data-allow-clear="true">
                     <option value=""></option>
                     <?php foreach ($all_users_for_filters as $user_filter) : ?>
@@ -119,9 +316,9 @@ try {
             </div>
 
             <div>
-                <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
+                <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-2">Assessment:</label>
                 <select name="quiz_id" id="quiz_id"
-                        class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
+                        class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 select2-enabled"
                         data-placeholder="All Assessments" data-allow-clear="true">
                     <option value=""></option>
                     <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
@@ -133,8 +330,8 @@ try {
             </div>
 
             <div>
-                <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status:</label>
-                <select name="status" id="status" class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                <label for="status" class="block text-sm font-medium text-gray-700 mb-2">Status:</label>
+                <select name="status" id="status" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
                     <option value="">All Statuses</option>
                     <option value="completed" <?php echo ($filter_status === 'completed') ? 'selected' : ''; ?>>Completed</option>
                     <option value="pending" <?php echo ($filter_status === 'pending') ? 'selected' : ''; ?>>Pending</option>
@@ -144,89 +341,99 @@ try {
             </div>
 
             <div>
-                <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
+                <label for="start_date" class="block text-sm font-medium text-gray-700 mb-2">Start Date:</label>
                 <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                       class="form-input block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 p-2.5">
             </div>
 
             <div>
-                <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
+                <label for="end_date" class="block text-sm font-medium text-gray-700 mb-2">End Date:</label>
                 <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
-                       class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
+                       class="form-input block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 p-2.5">
             </div>
 
-            <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
-                <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
-                    <i class="fas fa-filter mr-2"></i> Apply Filters
+            <div class="flex-grow"></div>
+
+            <div class="sticky bottom-0 bg-white p-6 -mx-6 -mb-6 border-t border-gray-200 flex flex-col sm:flex-row justify-end space-y-3 sm:space-y-0 sm:space-x-3 mt-auto">
+                <button type="submit" class="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center space-x-2 shadow-md">
+                    <i class="fas fa-search"></i>
+                    <span>Apply Filters</span>
                 </button>
-                <a href="payments.php" class="bg-gray-400 text-white px-6 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center">
-                    <i class="fas fa-undo mr-2"></i> Reset Filters
+                <a href="payments.php" class="w-full sm:w-auto bg-gray-300 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-400 transition duration-300 ease-in-out flex items-center justify-center space-x-2 shadow-md">
+                    <i class="fas fa-undo"></i>
+                    <span>Reset Filters</span>
                 </a>
             </div>
         </form>
     </div>
 
-    <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
-        <?php if (empty($payments)): ?>
-            <p class="text-center text-gray-600 py-8">No payment records found matching your criteria.</p>
-        <?php else: ?>
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction Ref.</th>
-                        <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Date</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($payments as $payment): ?>
-                    <tr>
-                        <td class="px-4 py-2 whitespace-nowrap font-medium text-gray-900">
-                            <?php echo htmlspecialchars($payment['payment_id']); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            <?php echo htmlspecialchars($payment['student_username']); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-normal text-gray-900 max-w-xs">
-                            <?php echo htmlspecialchars($payment['quiz_title']); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            ₦<?php echo number_format(htmlspecialchars($payment['amount']), 2); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap">
-                            <?php
-                                $status_class = '';
-                                switch ($payment['status']) {
-                                    case 'completed': $status_class = 'bg-green-100 text-green-800'; break;
-                                    case 'pending': $status_class = 'bg-yellow-100 text-yellow-800'; break;
-                                    case 'failed': $status_class = 'bg-red-100 text-red-800'; break;
-                                    case 'abandoned': $status_class = 'bg-gray-100 text-gray-800'; break;
-                                    default: $status_class = 'bg-gray-100 text-gray-800'; break;
-                                }
-                            ?>
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
-                                <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
-                            </span>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            <?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                            <?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </div>
+    <div id="sidebarOverlay" class="overlay fixed inset-0 bg-black bg-opacity-40 hidden opacity-0"></div>
 
-</div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebar = document.getElementById('filterSidebar');
+            const openSidebarBtn = document.getElementById('openFilterSidebar');
+            const closeSidebarBtn = document.getElementById('closeFilterSidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+            // Function to open the sidebar
+            function openSidebar() {
+                sidebar.classList.add('open');
+                sidebarOverlay.classList.remove('hidden');
+                setTimeout(() => sidebarOverlay.classList.remove('opacity-0'), 10); // Fade in overlay
+                document.body.classList.add('overflow-hidden'); // Prevent scrolling body
+                // Re-initialize Select2 or trigger resize if it's already open
+                // This is crucial for Select2 to calculate its width correctly when hidden elements become visible.
+                $('.select2-enabled').each(function() {
+                    $(this).select2('open'); // Open temporarily to trigger width calculation
+                    $(this).select2('close'); // Then close it
+                });
+            }
+
+            // Function to close the sidebar
+            function closeSidebar() {
+                sidebar.classList.remove('open');
+                sidebarOverlay.classList.add('opacity-0'); // Fade out overlay
+                setTimeout(() => sidebarOverlay.classList.add('hidden'), 300); // Hide after transition
+                document.body.classList.remove('overflow-hidden'); // Allow body scrolling
+            }
+
+            // Event Listeners
+            if (openSidebarBtn) {
+                openSidebarBtn.addEventListener('click', openSidebar);
+            }
+            if (closeSidebarBtn) {
+                closeSidebarBtn.addEventListener('click', closeSidebar);
+            }
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', closeSidebar); // Close sidebar when clicking overlay
+            }
+
+            // Select2 Initialization
+            if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+                $('.select2-enabled').each(function() {
+                    const placeholder = $(this).data('placeholder') || 'Select an option';
+                    const allowClear = $(this).data('allow-clear') === true; // Check for strict true
+
+                    $(this).select2({
+                        placeholder: placeholder,
+                        allowClear: allowClear,
+                        width: '100%', // Ensure Select2 takes full width of its parent
+                        dropdownParent: $(this).parent() // Crucial for correct dropdown positioning within modal/sidebar
+                    });
+                });
+            } else {
+                console.warn("jQuery or Select2 plugin not loaded. Select2 functionality will not work.");
+            }
+        });
+    </script>
+
+    <?php // require_once '../includes/footer_admin.php'; // Included at the bottom of body ?>
+</body>
+</html>
 <?php
 // Include the admin specific footer
 require_once '../includes/footer_admin.php';

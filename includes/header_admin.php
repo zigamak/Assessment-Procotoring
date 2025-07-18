@@ -16,6 +16,8 @@ $logged_in_user_id = $_SESSION['user_id'] ?? null; // Get user ID from session
 // Function to fetch user details (updated to include first_name and last_name)
 // This function needs to be defined once, preferably in functions.php or a dedicated model file.
 // For demonstration, I'm including it here, but ideally, it's globally available.
+// NOTE: This function is already defined in functions.php, so we only include it if it doesn't exist
+// to avoid "Cannot redeclare" error.
 if (!function_exists('fetchUserDetails')) {
     function fetchUserDetails($pdo, $user_id) {
         try {
@@ -267,7 +269,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     // Function to hide the modal
                     function hideLogoutConfirmModal() {
                         logoutModal.classList.add('hidden');
-                        logoutRedirectUrl = ''; // Clear the stored URL
+                        // logoutRedirectUrl = ''; // DO NOT CLEAR HERE, it would prevent redirect if called before redirect
                     }
 
                     // Attach event listeners to logout links
@@ -277,10 +279,10 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     // Attach event listeners to modal buttons
                     cancelLogoutBtn.addEventListener('click', hideLogoutConfirmModal);
                     confirmLogoutBtn.addEventListener('click', function() {
-                        hideLogoutConfirmModal();
                         if (logoutRedirectUrl) {
-                            window.location.href = logoutRedirectUrl; // Redirect to logout page
+                            window.location.href = logoutRedirectUrl; // Redirect to logout page FIRST
                         }
+                        hideLogoutConfirmModal(); // Then hide the modal (though page will change)
                     });
 
                     // Close modal if clicking outside the content area
@@ -318,4 +320,4 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     </div>
                 </div>
             </div>
-            
+         

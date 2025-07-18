@@ -23,7 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = sanitize_input($_POST['password'] ?? '');
 
     if (empty($identifier) || empty($password)) {
-        $message = display_message("Please enter your username/email and password.", "error");
+        // Store message in session instead of directly displaying
+        $_SESSION['form_message'] = "Please enter your username/email and password.";
+        $_SESSION['form_message_type'] = 'error';
     } else {
         try {
             // Determine if the identifier is an email or username
@@ -50,13 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('../student/dashboard.php');
                 }
             } else {
-                $message = display_message("Invalid username/email or password. Please try again.", "error");
+                // Store message in session instead of directly displaying
+                $_SESSION['form_message'] = "Invalid username/email or password. Please try again.";
+                $_SESSION['form_message_type'] = 'error';
             }
         } catch (PDOException $e) {
             error_log("Login Error: " . $e->getMessage());
-            $message = display_message("An unexpected error occurred. Please try again later.", "error");
+            // Store message in session for unexpected errors
+            $_SESSION['form_message'] = "An unexpected error occurred. Please try again later.";
+            $_SESSION['form_message_type'] = 'error';
         }
     }
+    // If there was an error message, ensure we redirect back to the login page to display it.
+    // This is crucial for session messages to be picked up by the client-side JavaScript.
+    // No explicit redirect here, as the PHP continues to render the page,
+    // and the JS will handle displaying the message from the session.
 }
 ?>
 
@@ -77,7 +87,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="bg-gradient-to-br from-gray-100 to-blue-50 min-h-screen flex items-center justify-center">
     <div class="container mx-auto px-4 py-8">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-            <!-- Left Section: Welcome and Description -->
             <div class="bg-navy-900 text-white p-12 flex flex-col justify-center">
                 <h1 class="text-4xl font-bold mb-4">Welcome to Mackenny Assessment</h1>
                 <p class="text-lg mb-6">
@@ -90,11 +99,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </p>
             </div>
             
-            <!-- Right Section: Login Form -->
-            <div class="p-12">
-                <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">User Login</h2>
+            <div class="p-12 relative"> <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">User Login</h2>
                 
-                <?php echo $message; // Display any feedback messages ?>
+                <div id="error-notification" class="hidden absolute top-0 left-0 w-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md mb-4" role="alert" style="transform: translateY(-100%);">
+                    <strong class="font-bold">Error!</strong>
+                    <span class="block sm:inline" id="error-message-content"></span>
+                    <span class="absolute top-0 bottom-0 right-0 px-4 py-3">
+                        <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" class="h-6 w-6 cursor-pointer" onclick="document.getElementById('error-notification').classList.add('hidden')">
+                            <path d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </span>
+                </div>
+
+                <?php 
+                if (isset($_GET['registration_success']) && $_GET['registration_success'] == 1) {
+                    echo display_message("Registration successful! Please log in with your new credentials.", "success");
+                }
+                ?>
 
                 <form action="login.php" method="POST" class="space-y-6">
                     <div>
@@ -106,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             required
                             class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
                             placeholder="Enter your username or email"
+                            value="<?= htmlspecialchars($identifier ?? '') ?>"
                         >
                     </div>
                     <div>
@@ -142,5 +164,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+
+    <script>
+        // Function to display a Tailwind CSS notification
+        function displayNotification(message, type) {
+            const notificationContainer = document.getElementById('error-notification');
+            const messageContentElement = document.getElementById('error-message-content');
+
+            if (type === 'error' && message) {
+                messageContentElement.textContent = message;
+                notificationContainer.classList.remove('hidden');
+                // Optional: Make it slide down nicely
+                notificationContainer.style.transition = 'transform 0.3s ease-out';
+                notificationContainer.style.transform = 'translateY(0)';
+            } else {
+                // Optional: Make it slide up before hiding
+                notificationContainer.style.transition = 'transform 0.3s ease-in';
+                notificationContainer.style.transform = 'translateY(-100%)';
+                notificationContainer.addEventListener('transitionend', function handler() {
+                    notificationContainer.classList.add('hidden');
+                    notificationContainer.removeEventListener('transitionend', handler);
+                });
+            }
+        }
+
+        // Check for messages from PHP session and display them on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            <?php if (isset($_SESSION['form_message'])): ?>
+                displayNotification("<?= $_SESSION['form_message'] ?>", "<?= $_SESSION['form_message_type'] ?>");
+                <?php
+                unset($_SESSION['form_message']); // Clear the message after displaying
+                unset($_SESSION['form_message_type']);
+                ?>
+            <?php endif; ?>
+        });
+    </script>
 </body>
 </html>

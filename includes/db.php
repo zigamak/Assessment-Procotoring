@@ -20,7 +20,8 @@ define('SITE_NAME', 'QuizMaster'); // Your application's name for emails
 define('SMTP_HOST', 'eventio.africa');     // e.g., 'smtp.gmail.com' or 'smtp.mailgun.org'
 define('SMTP_USERNAME', 'mackenny@eventio.africa'); // e.g., your email address for sending
 define('SMTP_PASSWORD', '*3;jW[12A$NS'); // e.g., your email password or app-specific password
-define('SMTP_PORT', 465);                      // Common ports: 465 for SMTPS, 587 for STARTTLS
+define('SMTP_SECURE', 'tls');
+define('SMTP_PORT', 587);                      // Common ports: 465 for SMTPS, 587 for STARTTLS
 define('SMTP_FROM_EMAIL', 'mackenny@eventio.africa'); // Email address messages will be sent FROM
 define('SMTP_FROM_NAME', 'Mackenny Assessment');             // Name displayed as sender
 

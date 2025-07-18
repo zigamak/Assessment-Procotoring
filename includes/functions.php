@@ -4,6 +4,8 @@
 
 // Ensure session is started if it hasn't been already
 // This is crucial for accessing $_SESSION variables like 'user_id', 'username', 'role'.
+// It's good practice to have session_start() in a central place like session.php,
+// but checking here ensures it's always started if this file is included first.
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
@@ -13,9 +15,9 @@ if (session_status() == PHP_SESSION_NONE) {
 // Make sure db.php defines $pdo as a global variable or returns it.
 require_once __DIR__ . '/db.php'; // Using __DIR__ for robust path inclusion
 
-// NOTE: getUserId() is assumed to be defined in includes/session.php
+// NOTE: getUserId() and logout() are assumed to be defined in includes/session.php
 // and should NOT be redefined here to avoid "Cannot redeclare" errors.
-// Therefore, we've removed its definition from this file.
+// Therefore, their definitions have been removed from this file.
 
 
 /**
@@ -38,6 +40,9 @@ function sanitize_input($data) {
 
 /**
  * Redirects the user to a specified URL.
+ * This function expects a complete URL or a path relative to the current script.
+ * For application-wide redirects using BASE_URL, ensure BASE_URL is prepended
+ * before calling this function (e.g., redirect(BASE_URL . 'some/path.php')).
  * @param string $location The URL to redirect to.
  */
 function redirect($location) {
@@ -103,12 +108,8 @@ function isStudent() {
  */
 function enforceRole($required_role, $redirect_url) {
     // Check if user is logged in at all
-    if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
-        redirect($redirect_url);
-    }
-
-    // Check if the logged-in user has the required role
-    if ($_SESSION['role'] !== $required_role) {
+    // isLoggedIn() and getUserRole() are assumed to be in session.php
+    if (!isLoggedIn() || getUserRole() !== $required_role) {
         redirect($redirect_url);
     }
 }
@@ -121,30 +122,17 @@ function enforceRole($required_role, $redirect_url) {
  *
  * @return string|null The user's email address, or null if not found or not logged in.
  */
-function getUserEmail() {
-    // Access the global PDO connection.
-    global $pdo;
-
-    // getUserId() is assumed to be defined in includes/session.php
-    // Make sure session.php is required wherever getUserEmail() is called,
-    // or include it directly here if it contains only non-conflicting functions.
-    // For now, assuming it's available via an earlier require in the execution flow.
-    // If not, you might need: require_once __DIR__ . '/session.php';
-    $user_id = getUserId(); 
-
-    if ($user_id && $pdo) { // Ensure user_id is available and PDO connection exists
-        try {
-            $stmt = $pdo->prepare("SELECT email FROM users WHERE user_id = :user_id LIMIT 1");
-            $stmt->execute(['user_id' => $user_id]);
-            $user_email = $stmt->fetchColumn();
-            return $user_email ?: null; // Return email or null if not found
-        } catch (PDOException $e) {
-            error_log("Error fetching user email in getUserEmail(): " . $e->getMessage());
-            return null;
-        }
+function fetchUserDetails($pdo, $user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT user_id, username, email, password_hash, role, passport_image_path, city, state, country, first_name, last_name FROM users WHERE user_id = :user_id");
+        $stmt->execute(['user_id' => $user_id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error fetching user details: " . $e->getMessage());
+        return null;
     }
-    return null; // No user_id in session or PDO not available
 }
+
 
 /**
  * Formats a given datetime string into a human-readable format.

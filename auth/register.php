@@ -5,6 +5,8 @@
 require_once '../includes/session.php'; // For session management (e.g., isLoggedIn, getUserRole, display_message)
 require_once '../includes/db.php';     // For database connection ($pdo)
 require_once '../includes/functions.php'; // For utility functions (e.g., sanitize_input, redirect, display_message)
+require_once '../includes/send_email.php'; // For sending emails
+
 
 $message = ''; // Initialize message variable for feedback
 
@@ -26,13 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Basic validation for required fields
     if (empty($first_name) || empty($last_name) || empty($email) || empty($password) || empty($confirm_password)) {
-        $message = display_message("First Name, Last Name, Email, Password, and Confirm Password are required.", "error");
+        $message = "First Name, Last Name, Email, Password, and Confirm Password are required.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = display_message("Invalid email format.", "error");
+        $message = "Invalid email format.";
     } elseif ($password !== $confirm_password) {
-        $message = display_message("Passwords do not match.", "error");
+        $message = "Passwords do not match.";
     } elseif (strlen($password) < 6) {
-        $message = display_message("Password must be at least 6 characters long.", "error");
+        $message = "Password must be at least 6 characters long.";
     } else {
         $username_to_use = $username; // Start with user-provided username
 
@@ -58,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt_check_user_username = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = :username");
             $stmt_check_user_username->execute(['username' => $username_to_use]);
             if ($stmt_check_user_username->fetchColumn() > 0) {
-                $message = display_message("The chosen username is already taken. Please choose another or leave it blank to auto-generate one.", "error");
+                $message = "The chosen username is already taken. Please choose another or leave it blank to auto-generate one.";
             }
         }
 
@@ -66,36 +68,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($message)) {
             try {
                 // Check if email already exists
-                $stmt_check_email = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = :email");
+                $stmt_check_email = $pdo->prepare("SELECT * FROM users WHERE email = :email");
                 $stmt_check_email->execute(['email' => $email]);
-                if ($stmt_check_email->fetchColumn() > 0) {
-                    $message = display_message("An account with this email address already exists.", "error");
+                $existingUser = $stmt_check_email->fetch(PDO::FETCH_ASSOC);
+
+                if ($existingUser) {
+                    $message = "An account with this email address already exists.";
                 } else {
                     // Hash the password before storing
                     $password_hash = password_hash($password, PASSWORD_DEFAULT);
                     $role = 'student'; // Default role for public registration
 
+                    // Generate a one-time auto-login token
+                    $auto_login_token = bin2hex(random_bytes(32));
+                    $auto_login_token_expiry = date('Y-m-d H:i:s', strtotime('+15 minutes')); // Token valid for 15 minutes
+
                     // Insert new user into the database
-                    $stmt = $pdo->prepare("INSERT INTO users (first_name, last_name, username, password_hash, email, role) VALUES (:first_name, :last_name, :username, :password_hash, :email, :role)");
+                    $stmt = $pdo->prepare("INSERT INTO users (first_name, last_name, username, password_hash, email, role, auto_login_token, auto_login_token_expiry) VALUES (:first_name, :last_name, :username, :password_hash, :email, :role, :auto_login_token, :auto_login_token_expiry)");
                     if ($stmt->execute([
                         'first_name' => $first_name,
                         'last_name' => $last_name,
                         'username' => $username_to_use, // Use the auto-generated or user-provided unique username
                         'password_hash' => $password_hash,
                         'email' => $email,
-                        'role' => $role
+                        'role' => $role,
+                        'auto_login_token' => $auto_login_token,
+                        'auto_login_token_expiry' => $auto_login_token_expiry
                     ])) {
-                        // Redirect to login page on successful registration
-                        redirect('login.php?registration_success=1');
+                        $new_user_id = $pdo->lastInsertId();
+
+                        // Prepare the auto-login link for the email
+                        $auto_login_link = BASE_URL . "/auth/auto_login.php?token=" . $auto_login_token;
+
+                        // Include the email template and capture its output
+                        ob_start(); // Start output buffering
+                        require '../includes/email_templates/welcome_email.php'; // Include the template
+                        $email_body = ob_get_clean(); // Get the buffered content and clean the buffer
+
+                        // Replace placeholders in the email body
+                        $email_body = str_replace('{{username}}', htmlspecialchars($username_to_use), $email_body);
+                        $email_body = str_replace('{{auto_login_link}}', htmlspecialchars($auto_login_link), $email_body);
+
+                        $subject = "Welcome to Mackenny Assessment!";
+
+                        // Send the welcome email
+                        if (sendEmail($email, $subject, $email_body)) {
+                            // Registration successful, now automatically log in the user (optional, can just redirect to login with message)
+                            // For this prompt, we'll auto-login the user directly after registration.
+                            $_SESSION['user_id'] = $new_user_id; // Get the ID of the newly inserted user
+                            $_SESSION['username'] = $username_to_use;
+                            $_SESSION['role'] = $role;
+
+                            // After successful registration and email sending, redirect to dashboard.
+                            redirect('../student/dashboard.php');
+                        } else {
+                            // If email fails to send, still register but give a warning
+                            // It's a design choice if you want to prevent registration on email failure
+                            error_log("Failed to send welcome email to " . $email . " for new user " . $username_to_use);
+                            $_SESSION['form_message'] = "Registration successful, but we could not send the welcome email. Please check your login details.";
+                            $_SESSION['form_message_type'] = 'warning'; // Use 'warning' type for partial success
+                            redirect('../student/dashboard.php'); // Still log in the user, or redirect to login.php
+                        }
                     } else {
-                        $message = display_message("Registration failed. Please try again.", "error");
+                        $message = "Registration failed. Please try again.";
                     }
                 }
             } catch (PDOException $e) {
                 error_log("Registration Error: " . $e->getMessage()); // Log the error for debugging
-                $message = display_message("An unexpected error occurred during registration. Please try again later.", "error");
+                $message = "An unexpected error occurred during registration. Please try again later.";
             }
         }
+    }
+    // If there's an error message (from validation or DB check), store it in a session variable to be displayed via JavaScript
+    if (!empty($message)) {
+        $_SESSION['form_message'] = $message;
+        $_SESSION['form_message_type'] = 'error';
+        // Redirect back to the registration page to display the message
+        header('Location: register.php');
+        exit;
     }
 }
 ?>
@@ -107,12 +157,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Register - Mackenny Assessment</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Custom theme colors consistent with login.php */
-        .bg-navy-900 { background-color: #0a1930; }
-        .bg-navy-800 { background-color: #1a2b4a; }
-        .hover\:bg-navy-700:hover { background-color: #2c3e6a; }
-        .focus\:ring-navy-900:focus { --tw-ring-color: #0a1930; }
-        .text-theme-color { color: #1e4b31; } /* Keeping this for the main heading, though navy is dominant */
+    /* Custom theme colors consistent with login.php */
+    .bg-navy-900 { background-color: #0a1930; }
+    .bg-navy-800 { background-color: #1a2b4a; }
+    .hover\:bg-navy-700:hover { background-color: #2c3e6a; }
+    .focus\:ring-navy-900:focus { --tw-ring-color: #0a1930; }
+    .text-theme-color { color: #1e4b31; } /* Keeping this for the main heading, though navy is dominant */
     </style>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -131,16 +181,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </p>
         </div>
         
-        <div class="p-12">
+        <div class="p-12 relative">
             <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Registration</h2>
             
-            <?php
-            // Display registration success message if redirected from successful registration
-            if (isset($_GET['registration_success']) && $_GET['registration_success'] == 1) {
-                echo display_message("Registration successful! You can now log in.", "success");
-            }
-            echo $message; // Display other feedback messages (e.g., validation errors)
-            ?>
+            <div id="form-notification" class="absolute top-0 left-0 w-full px-4 py-3 rounded-md" role="alert" style="transform: translateY(-100%);">
+                <strong class="font-bold"></strong>
+                <span class="block sm:inline" id="notification-message-content"></span>
+                <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="hideNotification()">
+                    <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" class="h-6 w-6">
+                        <path d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </span>
+            </div>
 
             <form action="register.php" method="POST" class="space-y-6">
                 <div>
@@ -202,7 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             placeholder="Enter your password"
                         >
                         <button type="button" onclick="togglePasswordVisibility('password')"
-                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-sm leading-5 focus:outline-none">
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-sm leading-5 focus:outline-none">
                             <svg id="password_icon_eye" class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -227,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             placeholder="Confirm your password"
                         >
                         <button type="button" onclick="togglePasswordVisibility('confirm_password')"
-                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-sm leading-5 focus:outline-none">
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-sm leading-5 focus:outline-none">
                             <svg id="confirm_password_icon_eye" class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -261,17 +313,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div id="g_id_onload"
-                     data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
-                     data-callback="handleGoogleSignIn"
-                     data-auto_prompt="false">
+                    data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+                    data-callback="handleGoogleSignIn"
+                    data-auto_prompt="false">
                 </div>
                 <div class="g_id_signin"
-                     data-type="standard"
-                     data-size="large"
-                     data-theme="outline"
-                     data-text="sign_in_with"
-                     data-shape="rectangular"
-                     data-logo_alignment="left">
+                    data-type="standard"
+                    data-size="large"
+                    data-theme="outline"
+                    data-text="sign_in_with"
+                    data-shape="rectangular"
+                    data-logo_alignment="left">
                 </div>
             </div>
 
@@ -297,29 +349,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Function to display a Tailwind CSS notification
+    function displayNotification(message, type) {
+        const notificationContainer = document.getElementById('form-notification');
+        const messageContentElement = document.getElementById('notification-message-content');
+        const strongTag = notificationContainer.querySelector('strong');
+
+        // Reset classes to remove previous styling
+        notificationContainer.classList.remove('bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700', 'bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
+        strongTag.textContent = ''; // Clear existing title text
+
+        if (message) {
+            messageContentElement.textContent = message; // Set the message content
+
+            // Apply specific classes based on message type
+            if (type === 'error') {
+                notificationContainer.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+                strongTag.textContent = 'Error!'; // Set title for error
+            } else if (type === 'success') {
+                notificationContainer.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+                strongTag.textContent = 'Success!'; // Set title for success
+            } else if (type === 'warning') { // Added warning type
+                notificationContainer.classList.add('bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
+                strongTag.textContent = 'Warning!'; // Set title for warning
+            }
+
+            // Remove hidden class and slide down
+            notificationContainer.classList.remove('hidden');
+            setTimeout(() => {
+                notificationContainer.style.transition = 'transform 0.3s ease-out';
+                notificationContainer.style.transform = 'translateY(0)'; // Slide down into view
+            }, 10);
+        } else {
+            hideNotification(); // If no message, ensure it's hidden
+        }
+    }
+
+    // Function to hide the notification
+    function hideNotification() {
+        const notificationElement = document.getElementById('form-notification');
+        notificationElement.style.transition = 'transform 0.3s ease-in';
+        notificationElement.style.transform = 'translateY(-100%)'; // Slide up out of view
+
+        // Add a single-use event listener to add 'hidden' class after transition
+        notificationElement.addEventListener('transitionend', function handler() {
+            notificationElement.classList.add('hidden');
+            // Remove the event listener to prevent it from firing multiple times
+            notificationElement.removeEventListener('transitionend', handler);
+        });
+    }
+
+    // Check for messages from PHP session and display them
+    <?php if (isset($_SESSION['form_message'])): ?>
+        displayNotification("<?= htmlspecialchars($_SESSION['form_message']) ?>", "<?= htmlspecialchars($_SESSION['form_message_type']) ?>");
+        <?php
+        unset($_SESSION['form_message']); // Clear the message after displaying
+        unset($_SESSION['form_message_type']);
+        ?>
+    <?php endif; ?>
+
     // Google Sign-In Callback Function
-    // This function is called by Google's Identity Services after a successful sign-in.
     async function handleGoogleSignIn(response) {
-        const idToken = response.credential; // The Google ID token
+        const idToken = response.credential;
 
-        console.log('Google ID Token:', idToken); // For debugging: view the token in console
-
-        // --- IMPORTANT: Send this ID token to your PHP backend for verification ---
-        // You will need to create a new PHP file (e.g., 'auth/google_auth.php')
-        // that handles the server-side verification and user management.
-        // Your backend would:
-        // 1. Receive this ID token via a POST request.
-        // 2. Verify the ID token's authenticity and integrity with Google's API.
-        //    (e.g., using Google's PHP client library or by making a cURL request to
-        //    https://oauth2.googleapis.com/tokeninfo?id_token=YOUR_ID_TOKEN)
-        // 3. Extract user information (email, name, etc.) from the verified token.
-        // 4. Check if a user with that email already exists in your 'users' database.
-        // 5. If exists, log them in. If not, create a new 'student' user account
-        //    using the information from Google, then log them in.
-        // 6. Set appropriate session variables and redirect the user.
+        console.log('Google ID Token:', idToken);
 
         try {
-            const backendResponse = await fetch('google_auth.php', { // Path to your backend Google auth handler
+            const backendResponse = await fetch('google_auth.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -330,15 +426,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const data = await backendResponse.json();
 
             if (data.success) {
-                // Redirect on successful login/registration via Google
-                window.location.href = data.redirect_url; // e.g., '../dashboard.php' or 'login.php?google_success=1'
+                window.location.href = data.redirect_url;
             } else {
-                // Display error message from backend
-                alert('Google registration/login failed: ' + (data.message || 'Unknown error.')); // Use a custom modal in production
+                displayNotification('Google registration/login failed: ' + (data.message || 'Unknown error.'), 'error');
             }
         } catch (error) {
             console.error('Error sending Google token to backend:', error);
-            alert('An error occurred during Google sign-in. Please try again.'); // Use a custom modal in production
+            displayNotification('An error occurred during Google sign-in. Please try again.', 'error');
         }
     }
 </script>
