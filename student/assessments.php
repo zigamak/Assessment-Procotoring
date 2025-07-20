@@ -3,68 +3,55 @@
 // Allows students to view their quiz history and detailed results for specific attempts.
 
 require_once '../includes/session.php';
-require_once '../includes/db.php'; // Make sure this connects successfully and sets $pdo
-require_once '../includes/functions.php'; // Make sure this contains getUserId() and sanitize_input(), display_message()
+require_once '../includes/db.php';
+require_once '../includes/functions.php';
 
 // Include the student specific header. This also handles role enforcement.
 require_once '../includes/header_student.php';
 
-$message = ''; // Initialize message variable for feedback
-$user_id = getUserId(); // Get the ID of the currently logged-in student
+$message = '';
+$user_id = getUserId();
 
-// Redirect if user_id is not available (not logged in or session issue)
+// Redirect if user_id is not available
 if (!$user_id) {
-    // This scenario should ideally be handled by header_student.php, but good to have a fallback
-    redirect('login.php'); // Or appropriate redirect for not logged in users
+    redirect('login.php');
     exit();
 }
 
-// --- Fetch User's Grade ---
-// Initialize user's grade to null or empty string. An empty string is often easier for SQL WHERE clauses
-// if you want to treat "no grade" as a specific state.
+// Fetch user's grade
 $logged_in_user_grade = '';
-// Attempt to get grade from session first to avoid repeated DB queries
 if (isset($_SESSION['user_grade'])) {
     $logged_in_user_grade = $_SESSION['user_grade'];
 } else {
-    // If not in session, fetch it from the database
     try {
         $stmt_user_grade = $pdo->prepare("SELECT grade FROM users WHERE user_id = :user_id");
         $stmt_user_grade->execute(['user_id' => $user_id]);
         $user_data = $stmt_user_grade->fetch(PDO::FETCH_ASSOC);
         if ($user_data && !empty($user_data['grade'])) {
             $logged_in_user_grade = $user_data['grade'];
-            $_SESSION['user_grade'] = $logged_in_user_grade; // Store in session for future requests
-        } else {
-            // If user has no grade or it's empty, keep $logged_in_user_grade as an empty string.
-            // This will ensure the grade filter is not applied for such users.
+            $_SESSION['user_grade'] = $logged_in_user_grade;
         }
     } catch (PDOException $e) {
-        error_log("Error fetching user grade for quiz filtering: " . $e->getMessage());
-        $message .= display_message("Could not fetch your grade information. Some assessments may not be visible correctly.", "error");
-        // Fallback to empty string for grade filter on error
-        $logged_in_user_grade = '';
+        error_log("Error fetching user grade: " . $e->getMessage());
+        $message .= display_message("Could not fetch your grade information.", "error");
     }
 }
 
+$attempts = [];
+$current_attempt = null;
 
-$attempts = []; // Array to hold fetched quiz attempts for overview
-$current_attempt = null; // Object to hold detailed data for a single attempt view
-
-// --- Filter Variables ---
+// Filter variables
 $filter_quiz_id = sanitize_input($_GET['quiz_id'] ?? null);
 $filter_start_date = sanitize_input($_GET['start_date'] ?? null);
 $filter_end_date = sanitize_input($_GET['end_date'] ?? null);
 $filter_min_percentage = filter_input(INPUT_GET, 'min_percentage', FILTER_VALIDATE_FLOAT);
-// Ensure min_percentage is within a valid range
 if ($filter_min_percentage !== false && $filter_min_percentage < 0) $filter_min_percentage = 0;
 if ($filter_min_percentage !== false && $filter_min_percentage > 100) $filter_min_percentage = 100;
 
-// --- Search Variable ---
+// Search variable
 $search_query = sanitize_input($_GET['search'] ?? null);
 
-
-// Sanitize the input attempt_id from the GET request
+// Sanitize attempt_id
 $view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
 
 /**
@@ -75,33 +62,25 @@ $view_attempt_id = filter_input(INPUT_GET, 'attempt_id', FILTER_VALIDATE_INT);
  */
 function calculate_percentage($score, $max_score) {
     if ($max_score <= 0) {
-        return 0; // Avoid division by zero
+        return 0;
     }
     return round(($score / $max_score) * 100, 2);
 }
 
-// Fetch all quizzes for the filter dropdown, applying grade visibility logic
+// Fetch quizzes for filter dropdown
 $all_quizzes_for_filters = [];
 try {
     $sql_quizzes_filter = "SELECT quiz_id, title FROM quizzes";
     $quiz_filter_params = [];
     $quiz_filter_where_clauses = [];
-
-    // Apply grade filtering:
-    // If user has a grade ($logged_in_user_grade is not empty),
-    // show quizzes with NULL grade (visible to all) OR quizzes matching their grade.
-    // If user has no grade (empty string), show all quizzes (no grade filter applied).
     if (!empty($logged_in_user_grade)) {
         $quiz_filter_where_clauses[] = "(grade IS NULL OR grade = :user_grade)";
         $quiz_filter_params['user_grade'] = $logged_in_user_grade;
     }
-
     if (!empty($quiz_filter_where_clauses)) {
         $sql_quizzes_filter .= " WHERE " . implode(" AND ", $quiz_filter_where_clauses);
     }
-
     $sql_quizzes_filter .= " ORDER BY title ASC";
-
     $stmt_quizzes = $pdo->prepare($sql_quizzes_filter);
     $stmt_quizzes->execute($quiz_filter_params);
     $all_quizzes_for_filters = $stmt_quizzes->fetchAll(PDO::FETCH_ASSOC);
@@ -110,12 +89,9 @@ try {
     $message = display_message("Could not fetch assessment list for filters.", "error");
 }
 
-
-// Main logic to fetch either overview or detailed attempt
+// Main logic
 if ($view_attempt_id) {
-    // Detailed View Logic
     try {
-        // Fetch detailed results for a specific attempt for the current student
         $stmt = $pdo->prepare("
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
@@ -129,14 +105,7 @@ if ($view_attempt_id) {
         $current_attempt = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($current_attempt) {
-            // Calculate percentage for the detailed view
-            if ($current_attempt['is_completed']) {
-                $current_attempt['percentage_score'] = calculate_percentage($current_attempt['score'], $current_attempt['max_possible_score']);
-            } else {
-                $current_attempt['percentage_score'] = 'N/A';
-            }
-
-            // Fetch answers for this attempt
+            $current_attempt['percentage_score'] = $current_attempt['is_completed'] ? calculate_percentage($current_attempt['score'], $current_attempt['max_possible_score']) : 'N/A';
             try {
                 $stmt_answers = $pdo->prepare("
                     SELECT
@@ -157,27 +126,21 @@ if ($view_attempt_id) {
             } catch (PDOException $e) {
                 error_log("Student View History (Answers) Error: " . $e->getMessage());
                 $message .= display_message("An error occurred while fetching answers for this attempt.", "warning");
-                $current_attempt['answers'] = []; // Ensure it's an empty array if fetching fails
+                $current_attempt['answers'] = [];
             }
-
         } else {
             $message = display_message("Attempt not found or you do not have permission to view it.", "error");
-            // If attempt isn't found/permission denied, set $view_attempt_id to null
-            // so that the overview is shown instead of a blank detailed view.
             $view_attempt_id = null;
         }
-
     } catch (PDOException $e) {
         error_log("Student View History (Main Detailed) Error: " . $e->getMessage());
-        $message = display_message("An error occurred while fetching the detailed quiz attempt. Please try again later.", "error");
-        $view_attempt_id = null; // Revert to overview if detailed attempt query failed
+        $message = display_message("An error occurred while fetching the detailed quiz attempt.", "error");
+        $view_attempt_id = null;
     }
 }
 
-// If not viewing a specific attempt (or if the specific attempt failed/not found), show overview
 if (!$view_attempt_id) {
     try {
-        // Fetch overview of all quiz attempts for the current student with filters
         $sql = "
             SELECT
                 qa.attempt_id, qa.score, qa.start_time, qa.end_time, qa.is_completed,
@@ -187,10 +150,8 @@ if (!$view_attempt_id) {
             JOIN quizzes q ON qa.quiz_id = q.quiz_id
             WHERE qa.user_id = :user_id
         ";
-
         $params = ['user_id' => $user_id];
         $where_clauses = [];
-
         if ($filter_quiz_id) {
             $where_clauses[] = "q.quiz_id = :quiz_id";
             $params['quiz_id'] = $filter_quiz_id;
@@ -203,48 +164,34 @@ if (!$view_attempt_id) {
             $where_clauses[] = "DATE(qa.start_time) <= :end_date";
             $params['end_date'] = $filter_end_date;
         }
-        // Add search query to WHERE clause
         if ($search_query) {
             $where_clauses[] = "q.title LIKE :search_query";
             $params['search_query'] = '%' . $search_query . '%';
         }
-
         if (!empty($where_clauses)) {
             $sql .= " AND " . implode(" AND ", $where_clauses);
         }
-
         $sql .= " ORDER BY qa.start_time DESC";
-
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $attempts_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Process attempts to add percentage and then apply percentage filter
         foreach ($attempts_raw as $attempt) {
-            if ($attempt['is_completed']) {
-                $calculated_percentage = calculate_percentage($attempt['score'], $attempt['max_possible_score']);
-                $attempt['percentage_score'] = $calculated_percentage;
-            } else {
-                $attempt['percentage_score'] = 'N/A';
-            }
-
-            // Apply percentage filter AFTER calculation
+            $attempt['percentage_score'] = $attempt['is_completed'] ? calculate_percentage($attempt['score'], $attempt['max_possible_score']) : 'N/A';
             if ($filter_min_percentage !== false) {
                 if ($attempt['is_completed'] && $attempt['percentage_score'] >= $filter_min_percentage) {
                     $attempts[] = $attempt;
-                } else if (!$attempt['is_completed'] && $filter_min_percentage == 0) { // If filtering for 0%, show incomplete
+                } else if (!$attempt['is_completed'] && $filter_min_percentage == 0) {
                     $attempts[] = $attempt;
                 }
             } else {
-                // If no percentage filter is set, include all
                 $attempts[] = $attempt;
             }
         }
-
     } catch (PDOException $e) {
         error_log("Student View History (Overview) Error: " . $e->getMessage());
-        $message = display_message("An error occurred while fetching your quiz history overview. Please try again later.", "error");
-        $attempts = []; // Ensure it's an empty array if fetching fails
+        $message = display_message("An error occurred while fetching your quiz history overview.", "error");
+        $attempts = [];
     }
 }
 ?>
@@ -252,7 +199,7 @@ if (!$view_attempt_id) {
 <div class="container mx-auto p-4 py-8 max-w-7xl">
     <h1 class="text-3xl font-bold text-theme-color mb-6 text-center">Your Assessments</h1>
 
-    <?php echo $message; // Display any feedback messages ?>
+    <?php echo $message; ?>
 
     <?php if ($view_attempt_id && isset($current_attempt) && $current_attempt): ?>
         <div class="flex flex-col md:flex-row justify-center items-start gap-8 mb-8">
@@ -296,14 +243,12 @@ if (!$view_attempt_id) {
                             <?php if ($answer['question_type'] === 'multiple_choice'): ?>
                                 <p><strong>Your Selected Option:</strong> <?php echo htmlspecialchars($answer['selected_option_text'] ?? 'No answer'); ?></p>
                                 <?php
-                                    // Parse the correct options data
                                     $correct_options_parsed = [];
                                     if (!empty($answer['correct_options_data'])) {
                                         $options_raw = explode(';;', $answer['correct_options_data']);
                                         foreach ($options_raw as $opt_str) {
-                                            // Ensure opt_str is not empty and contains '||' to prevent errors
                                             if (strpos($opt_str, '||') !== false) {
-                                                list($opt_text, $is_correct_val) = explode('||', $opt_str, 2); // Limit split to 2
+                                                list($opt_text, $is_correct_val) = explode('||', $opt_str, 2);
                                                 if ((bool)$is_correct_val) {
                                                     $correct_options_parsed[] = $opt_text;
                                                 }
@@ -326,7 +271,7 @@ if (!$view_attempt_id) {
                 <?php else: ?>
                     <p class="text-gray-600">No answers recorded for this attempt yet, or there was an issue retrieving them.</p>
                 <?php endif; ?>
-           </div>
+            </div>
         </div>
 
         <script>
@@ -334,30 +279,99 @@ if (!$view_attempt_id) {
                 const scoreElement = document.getElementById('animatedScore');
                 const resultStatusElement = document.getElementById('resultStatus');
                 const resultFeedbackElement = document.getElementById('resultFeedback');
-                // Ensure percentage_score is a number for animation, default to 0 if 'N/A'
-                const finalScore = <?php echo json_encode($current_attempt['percentage_score'] !== 'N/A' ? (int)$current_attempt['percentage_score'] : 0); ?>;
-                const duration = 1500; // milliseconds
+                const finalScore = <?php echo json_encode($current_attempt['percentage_score'] !== 'N/A' ? (float)$current_attempt['percentage_score'] : 0); ?>;
+                const duration = 1500;
                 const start = 0;
                 let startTime = null;
+
+                // Feedback message arrays for different score ranges
+                const feedbackMessages = {
+                    exceptional: [
+                        "Phenomenal performance! You're in the elite top tier!",
+                        "Absolutely stellar! You've mastered this challenge!",
+                        "Incredible work! You're a quiz superstar!",
+                        "Unbelievable! You've set a new standard of excellence!",
+                        "Spectacular job! You're among the best of the best!"
+                    ],
+                    great: [
+                        "Great job! You’re smashing it!",
+                        "Outstanding! You nailed it.",
+                        "Top marks! Keep it up.",
+                        "Brilliant work! You're on fire.",
+                        "You’ve done really well—keep going!"
+                    ],
+                    good: [
+                        "Good effort! A bit more polish and you'll ace it.",
+                        "Nice work, but you can push further.",
+                        "Almost there! Keep at it.",
+                        "Solid try! Now aim higher.",
+                        "You’ve got potential—just a little more effort!"
+                    ],
+                    improving: [
+                        "You're getting there! A bit more practice will boost your score!",
+                        "Nice try! Focus on the details to climb higher.",
+                        "Keep going! You're building a strong foundation.",
+                        "Good start! A little more study and you'll shine.",
+                        "Progress in motion! Stay focused to improve!"
+                    ],
+                    needsWork: [
+                        "Don't give up! Every attempt makes you stronger.",
+                        "Keep practicing! You're learning with every step.",
+                        "A challenge today is a victory tomorrow—keep at it!",
+                        "You're on the path to success—more practice will get you there!",
+                        "Every effort counts! Review and try again to soar!"
+                    ]
+                };
+
+                function getFeedback(score) {
+                    let messages, status, percentile;
+                    if (score > 95) {
+                        messages = feedbackMessages.exceptional;
+                        status = 'Exceptional';
+                        percentile = 96;
+                    } else if (score >= 90) {
+                        messages = feedbackMessages.great;
+                        status = 'Great Job';
+                        percentile = 90;
+                    } else if (score >= 70) {
+                        messages = feedbackMessages.good;
+                        status = 'Good Effort';
+                        percentile = 75;
+                    } else if (score >= 50) {
+                        messages = feedbackMessages.improving;
+                        status = 'Needs Improvement';
+                        percentile = null; // No percentile for <70%
+                    } else {
+                        messages = feedbackMessages.needsWork;
+                        status = 'Needs Improvement';
+                        percentile = null; // No percentile for <70%
+                    }
+                    const message = messages[Math.floor(Math.random() * messages.length)];
+                    // 50% chance to include percentile message for scores >= 70%
+                    const showPercentile = score >= 70 && Math.random() < 0.5;
+                    const finalMessage = showPercentile && percentile ? `${message} You scored higher than ${percentile}% of participants.` : message;
+                    return { status, message: finalMessage };
+                }
 
                 function animateScore(currentTime) {
                     if (!startTime) startTime = currentTime;
                     const progress = Math.min((currentTime - startTime) / duration, 1);
                     const currentScore = Math.floor(progress * (finalScore - start) + start);
-                    scoreElement.textContent = currentScore; // Set the number
-                    document.querySelector('#animatedScore + span').textContent = '%'; // Set the % sign
+                    scoreElement.textContent = currentScore;
+                    document.querySelector('#animatedScore + span').textContent = '%';
 
                     if (progress < 1) {
                         requestAnimationFrame(animateScore);
                     } else {
-                        // Set final status and feedback
-                        if (finalScore >= 70) {
-                            resultStatusElement.textContent = 'Great';
-                            // Dynamic feedback based on score, adjust as needed
-                            resultFeedbackElement.textContent = 'You scored higher than ' + Math.max(0, finalScore - 5) + '% of the people who have taken these tests.';
+                        if (finalScore !== 'N/A' && finalScore > 0) {
+                            const { status, message } = getFeedback(finalScore);
+                            resultStatusElement.textContent = status;
+                            resultFeedbackElement.textContent = message;
                         } else {
-                            resultStatusElement.textContent = 'Needs Improvement';
-                            resultFeedbackElement.textContent = 'Keep practicing! Review your answers to improve for next time.';
+                            scoreElement.textContent = 'N/A';
+                            document.querySelector('#animatedScore + span').textContent = '';
+                            resultStatusElement.textContent = 'Not Completed';
+                            resultFeedbackElement.textContent = 'This assessment was not completed.';
                         }
                     }
                 }
@@ -366,22 +380,18 @@ if (!$view_attempt_id) {
                     requestAnimationFrame(animateScore);
                 } else {
                     scoreElement.textContent = 'N/A';
-                    document.querySelector('#animatedScore + span').textContent = ''; // Clear % for N/A
+                    document.querySelector('#animatedScore + span').textContent = '';
                     resultStatusElement.textContent = 'Not Completed';
                     resultFeedbackElement.textContent = 'This assessment was not completed.';
                 }
 
-                // Toggle visibility for Questions & Answers
                 const toggleButton = document.getElementById('toggleAnswersButton');
                 const questionsAnswersSection = document.getElementById('questionsAnswersSection');
-
                 toggleButton.addEventListener('click', function() {
                     questionsAnswersSection.classList.toggle('hidden');
-                    if (questionsAnswersSection.classList.contains('hidden')) {
-                        toggleButton.innerHTML = '<i class="fas fa-eye mr-2"></i> View Questions & Answers';
-                    } else {
-                        toggleButton.innerHTML = '<i class="fas fa-eye-slash mr-2"></i> Hide Questions & Answers';
-                    }
+                    toggleButton.innerHTML = questionsAnswersSection.classList.contains('hidden')
+                        ? '<i class="fas fa-eye mr-2"></i> View Questions & Answers'
+                        : '<i class="fas fa-eye-slash mr-2"></i> Hide Questions & Answers';
                 });
             });
         </script>
@@ -389,22 +399,21 @@ if (!$view_attempt_id) {
     <?php else: ?>
         <div class="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 mb-4">
             <div class="relative flex-grow">
-    <input type="text" name="search" id="search_input"
-                value="<?php echo htmlspecialchars($search_query); ?>"
-                class="form-input w-3/4 rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 pl-10 py-3 text-lg"
-                placeholder="Search assessments...">
-    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-        <i class="fas fa-search"></i>
-    </span>
-</div>
+                <input type="text" name="search" id="search_input"
+                       value="<?php echo htmlspecialchars($search_query); ?>"
+                       class="form-input w-3/4 rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 pl-10 py-3 text-lg"
+                       placeholder="Search assessments...">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <i class="fas fa-search"></i>
+                </span>
+            </div>
             <button id="openFilterModal" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition duration-300 flex items-center justify-center sm:w-auto w-full">
                 <i class="fas fa-filter mr-2"></i> Filter
             </button>
-             <a href="assessments.php" class="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center sm:w-auto w-full">
+            <a href="assessments.php" class="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition duration-300 ease-in-out flex items-center justify-center sm:w-auto w-full">
                 <i class="fas fa-undo mr-2"></i> Reset
             </a>
         </div>
-
 
         <div id="filterModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
             <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg mx-4">
@@ -416,21 +425,19 @@ if (!$view_attempt_id) {
                 </div>
                 <form id="filterForm" action="assessments.php" method="GET" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="hidden" name="search" id="modal_search_input" value="<?php echo htmlspecialchars($search_query); ?>">
-
                     <div>
                         <label for="quiz_id" class="block text-sm font-medium text-gray-700 mb-1">Assessment:</label>
                         <select name="quiz_id" id="quiz_id"
                                 class="form-select mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 select2-enabled"
                                 data-placeholder="All Assessments" data-allow-clear="true">
                             <option value=""></option>
-                            <?php foreach ($all_quizzes_for_filters as $quiz_filter) : ?>
+                            <?php foreach ($all_quizzes_for_filters as $quiz_filter): ?>
                                 <option value="<?php echo htmlspecialchars($quiz_filter['quiz_id']); ?>" <?php echo ((string)$filter_quiz_id === (string)$quiz_filter['quiz_id']) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($quiz_filter['title']); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-
                     <div>
                         <label for="min_percentage" class="block text-sm font-medium text-gray-700 mb-1">Min. Percentage (%):</label>
                         <input type="number" name="min_percentage" id="min_percentage" min="0" max="100" step="any"
@@ -438,19 +445,16 @@ if (!$view_attempt_id) {
                                class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50"
                                placeholder="e.g., 70">
                     </div>
-
                     <div>
                         <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date:</label>
                         <input type="date" name="start_date" id="start_date" value="<?php echo htmlspecialchars($filter_start_date); ?>"
                                class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
                     </div>
-
                     <div>
                         <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date:</label>
                         <input type="date" name="end_date" id="end_date" value="<?php echo htmlspecialchars($filter_end_date); ?>"
                                class="form-input mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50">
                     </div>
-
                     <div class="col-span-full flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-2 mt-4">
                         <button type="submit" class="bg-accent text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300 ease-in-out flex items-center justify-center">
                             <i class="fas fa-filter mr-2"></i> Apply Filters
@@ -520,7 +524,6 @@ if (!$view_attempt_id) {
                 const resetFiltersModalBtn = document.getElementById('resetFiltersModal');
 
                 openFilterModalBtn.addEventListener('click', function() {
-                    // Sync the main search input value to the hidden modal input before opening
                     modalSearchInput.value = searchInput.value;
                     filterModal.classList.remove('hidden');
                 });
@@ -529,50 +532,38 @@ if (!$view_attempt_id) {
                     filterModal.classList.add('hidden');
                 });
 
-                // Optional: Close modal if user clicks outside of it
                 filterModal.addEventListener('click', function(event) {
                     if (event.target === filterModal) {
                         filterModal.classList.add('hidden');
                     }
                 });
 
-                // When the main search input changes, update the hidden input in the modal form
                 searchInput.addEventListener('input', function() {
                     modalSearchInput.value = searchInput.value;
                 });
 
-                // Handle the main search input submission (e.g., press Enter)
                 searchInput.addEventListener('keypress', function(event) {
                     if (event.key === 'Enter') {
-                        event.preventDefault(); // Prevent default form submission if input is part of a form
-                        // Construct the URL with current search query and existing filters
+                        event.preventDefault();
                         const currentParams = new URLSearchParams(window.location.search);
                         currentParams.set('search', searchInput.value);
-                        // Remove attempt_id if present to ensure overview
                         currentParams.delete('attempt_id');
                         window.location.search = currentParams.toString();
                     }
                 });
 
                 resetFiltersModalBtn.addEventListener('click', function() {
-                    // Clear all filter inputs within the modal
                     document.getElementById('quiz_id').value = '';
                     document.getElementById('min_percentage').value = '';
                     document.getElementById('start_date').value = '';
                     document.getElementById('end_date').value = '';
-                    // Keep the search query if it was set from the main input
-                    // modalSearchInput.value = ''; // Uncomment this if you want to reset search too
-
-                    // Submit the form to apply cleared filters (or navigate to base URL)
                     filterForm.submit();
                 });
             });
         </script>
-
     <?php endif; ?>
 </div>
 
 <?php
-// Include the student specific footer
 require_once '../includes/footer_student.php';
 ?>

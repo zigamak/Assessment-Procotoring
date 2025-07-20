@@ -117,13 +117,14 @@ try {
 $max_scores_per_quiz = [];
 
 try {
-    // Fetch assessments: those with no grade (grade IS NULL) or matching the user's grade
-    $stmt = $pdo->prepare("
+    // Fetch assessments: those with no grade (grade IS NULL or grade = '') or matching the user's grade
+    $sql = "
         SELECT quiz_id, title, max_attempts, duration_minutes, open_datetime, grade, assessment_fee
         FROM quizzes
-        WHERE grade IS NULL OR grade = :user_grade
+        WHERE grade IS NULL OR grade = '' OR grade = :user_grade
         ORDER BY created_at DESC
-    ");
+    ";
+    $stmt = $pdo->prepare($sql);
     $stmt->execute(['user_grade' => $user_grade]);
     $all_assessments_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -137,6 +138,8 @@ try {
 
         $assessment['attempts_taken'] = $attempts_taken;
         $assessment['is_paid'] = $paid_assessments[$assessment_id] ?? false;
+        // Ensure grade is displayed as 'N/A' if NULL or empty
+        $assessment['grade'] = empty($assessment['grade']) ? 'N/A' : $assessment['grade'];
 
         $all_assessments_for_display[] = $assessment;
     }
@@ -313,7 +316,7 @@ try {
         </h2>
         <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12 max-h-[80vh] overflow-y-auto">
             <?php if (empty($all_assessments_for_display)): ?>
-                <p class="text-gray-600">No assessments available for your grade level.</p>
+                <p class="text-gray-600">No assessments available</p>
             <?php else: ?>
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -333,7 +336,7 @@ try {
                                     <?php echo htmlspecialchars($assessment['title']); ?>
                                 </a>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade'] ?? 'N/A'); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade']); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 <?php echo $assessment['open_datetime'] ? date('j F, Y ga', strtotime($assessment['open_datetime'])) : 'Immediate'; ?>
@@ -445,9 +448,7 @@ try {
                                 <?php echo $attempt['end_time'] ? format_datetime($attempt['end_time']) : 'N/A'; ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php
-                                    echo $attempt['is_completed'] ? 'Completed' : 'Cancelled';
-                                ?>
+                                <?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <a href="<?php echo BASE_URL; ?>student/assessments.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"

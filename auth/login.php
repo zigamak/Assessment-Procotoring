@@ -154,10 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="text-center">
                         <p class="text-sm text-gray-600">
-                            Don't have an account? 
-                            <a href="register.php" class="text-blue-600 hover:text-blue-800 font-medium hover:underline">
-                                Register Now
-                            </a>
+                            To access the assessment dashboard, please ensure you've paid and check your email for instructions.
                         </p>
                     </div>
                 </form>

@@ -13,7 +13,81 @@ if (!isLoggedIn() || getUserRole() !== 'admin') {
     exit;
 }
 
-// Fetch all assessments
+// Handle delete assessment
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if ($_POST['action'] === 'delete_assessment') {
+        $quiz_id = sanitize_input($_POST['quiz_id'] ?? 0);
+        
+        if (empty($quiz_id)) {
+            $_SESSION['form_message'] = "Assessment ID is required to delete.";
+            $_SESSION['form_message_type'] = 'error';
+        } else {
+            try {
+                $pdo->beginTransaction();
+
+                // Get all attempt_ids associated with this quiz_id
+                $stmt = $pdo->prepare("SELECT attempt_id FROM quiz_attempts WHERE quiz_id = :quiz_id");
+                $stmt->execute(['quiz_id' => $quiz_id]);
+                $attempt_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+                // 1. Delete associated proctoring logs (depends on quiz_attempts)
+                // This must be done BEFORE deleting quiz_attempts
+                if (!empty($attempt_ids)) {
+                    $placeholders = implode(',', array_fill(0, count($attempt_ids), '?'));
+                    $stmt = $pdo->prepare("DELETE FROM proctoring_logs WHERE attempt_id IN ($placeholders)");
+                    $stmt->execute($attempt_ids);
+                    // error_log("Deleted proctoring_logs for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
+                }
+
+                // 2. Delete associated proctoring images (depends directly on quiz_id)
+                $stmt = $pdo->prepare("DELETE FROM proctoring_images WHERE quiz_id = :quiz_id");
+                $stmt->execute(['quiz_id' => $quiz_id]);
+                // error_log("Deleted proctoring_images for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
+
+                // 3. Delete associated quiz attempts (depends on quiz_id)
+                $stmt = $pdo->prepare("DELETE FROM quiz_attempts WHERE quiz_id = :quiz_id");
+                $stmt->execute(['quiz_id' => $quiz_id]);
+                // error_log("Deleted quiz_attempts for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
+
+                // 4. Delete associated payments (depends on quiz_id)
+                $stmt = $pdo->prepare("DELETE FROM payments WHERE quiz_id = :quiz_id");
+                $stmt->execute(['quiz_id' => $quiz_id]);
+                // error_log("Deleted payments for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
+
+                // 5. Delete associated questions and options
+                // This assumes 'questions' has ON DELETE CASCADE to 'options'
+                // and 'quizzes' has ON DELETE CASCADE to 'questions'
+                // If not, you might need: DELETE FROM questions WHERE quiz_id = :quiz_id;
+                // For robustness, even with CASCADE, explicit deletes are sometimes added for clarity or if cascade setup is uncertain.
+                // However, the cleanest way is via foreign key cascades.
+                // Let's assume you have ON DELETE CASCADE from quizzes to questions.
+
+                // 6. Delete the assessment itself
+                $stmt = $pdo->prepare("DELETE FROM quizzes WHERE quiz_id = :quiz_id");
+                if ($stmt->execute(['quiz_id' => $quiz_id])) {
+                    $pdo->commit();
+                    $_SESSION['form_message'] = "Assessment has been deleted successfully!";
+                    $_SESSION['form_message_type'] = 'success';
+                } else {
+                    $pdo->rollBack();
+                    $_SESSION['form_message'] = "Failed to delete assessment.";
+                    $_SESSION['form_message_type'] = 'error';
+                }
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                error_log("Delete Assessment Error: " . $e->getMessage());
+                $_SESSION['form_message'] = "Database error while deleting assessment: " . htmlspecialchars($e->getMessage());
+                $_SESSION['form_message_type'] = 'error';
+            }
+        }
+        
+        // Redirect to refresh the page and show message
+        header("Location: assessments.php");
+        exit;
+    }
+}
+
+// Fetch all assessments (rest of the file remains the same)
 try {
     $stmt = $pdo->query("
         SELECT quiz_id, title, description, max_attempts, duration_minutes, grade,
@@ -78,7 +152,6 @@ require_once '../includes/header_admin.php';
             </a>
         </div>
 
-        <!-- Notification -->
         <div id="form-notification" class="fixed top-4 right-4 px-4 py-3 rounded-md hidden z-50" role="alert">
             <strong class="font-bold"></strong>
             <span class="block sm:inline" id="notification-message-content"></span>
@@ -89,7 +162,6 @@ require_once '../includes/header_admin.php';
             </span>
         </div>
 
-        <!-- Assessments Table -->
         <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-semibold text-gray-800">Existing Assessments</h2>
@@ -162,18 +234,14 @@ require_once '../includes/header_admin.php';
                                                             Payment Link
                                                         </button>
                                                     <?php endif; ?>
-                                                    <form action="assessments.php" method="POST" onsubmit="return confirm('Are you sure you want to delete this assessment? This cannot be undone if there are no associated payments.');">
-                                                        <input type="hidden" name="action" value="delete_assessment">
-                                                        <input type="hidden" name="quiz_id" value="<?php echo htmlspecialchars($assessment['quiz_id']); ?>">
-                                                        <button type="submit"
-                                                                class="dropdown-item block px-4 py-2 text-sm text-red-600 hover:bg-red-600 hover:text-white w-full text-left flex items-center"
-                                                                role="menuitem">
-                                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                                            </svg>
-                                                            Delete
-                                                        </button>
-                                                    </form>
+                                                    <button type="button" onclick="openDeleteModal(<?php echo htmlspecialchars($assessment['quiz_id']); ?>, '<?php echo htmlspecialchars($assessment['title']); ?>')"
+                                                            class="dropdown-item block px-4 py-2 text-sm text-red-600 hover:bg-red-600 hover:text-white w-full text-left flex items-center"
+                                                            role="menuitem">
+                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                        </svg>
+                                                        Delete
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -193,7 +261,6 @@ require_once '../includes/header_admin.php';
             <?php endif; ?>
         </div>
 
-        <!-- Payment Link Modal -->
         <div id="paymentLinkModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
             <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
                 <h2 class="text-2xl font-semibold text-gray-800 mb-4">Payment Link</h2>
@@ -214,6 +281,31 @@ require_once '../includes/header_admin.php';
                 </div>
             </div>
         </div>
+
+        <div id="deleteConfirmationModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Confirm Deletion</h2>
+                <p class="text-gray-700 mb-6">Are you absolutely sure you want to delete the assessment "<strong id="assessmentTitleToDelete"></strong>"?</p>
+                <p class="text-red-600 font-bold mb-6">
+                    WARNING: This action is irreversible and will permanently delete all associated questions, options, user attempts, proctoring images, proctoring logs, and payment records for this assessment!
+                </p>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeDeleteModal()"
+                            class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300">
+                        Cancel
+                    </button>
+                    <form id="deleteAssessmentForm" action="assessments.php" method="POST">
+                        <input type="hidden" name="action" value="delete_assessment">
+                        <input type="hidden" id="quizIdToDelete" name="quiz_id" value="">
+                        <button type="submit"
+                                class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300">
+                            Delete Permanently
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <?php require_once '../includes/footer_admin.php'; ?>
@@ -235,7 +327,11 @@ require_once '../includes/header_admin.php';
                 currentOpenDropdown.classList.remove('show');
                 currentOpenDropdown = null;
             }
+            // Close modals if clicking outside them
             if (e.target.id === 'paymentLinkModal') {
+                e.target.classList.add('hidden');
+            }
+            if (e.target.id === 'deleteConfirmationModal') {
                 e.target.classList.add('hidden');
             }
         });
@@ -243,6 +339,10 @@ require_once '../includes/header_admin.php';
         function showPaymentLink(link) {
             document.getElementById('paymentLinkInput').value = link;
             document.getElementById('paymentLinkModal').classList.remove('hidden');
+            if (currentOpenDropdown) {
+                currentOpenDropdown.classList.remove('show'); // Close dropdown when modal opens
+                currentOpenDropdown = null;
+            }
         }
 
         async function copyPaymentLink() {
@@ -256,6 +356,22 @@ require_once '../includes/header_admin.php';
             }
         }
 
+        // Functions for the new delete confirmation modal
+        function openDeleteModal(quizId, title) {
+            document.getElementById('quizIdToDelete').value = quizId;
+            document.getElementById('assessmentTitleToDelete').textContent = title;
+            document.getElementById('deleteConfirmationModal').classList.remove('hidden');
+            if (currentOpenDropdown) {
+                currentOpenDropdown.classList.remove('show'); // Close dropdown when modal opens
+                currentOpenDropdown = null;
+            }
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteConfirmationModal').classList.add('hidden');
+        }
+
+        // Generic notification functions
         function displayNotification(message, type) {
             const notificationContainer = document.getElementById('form-notification');
             const messageContentElement = document.getElementById('notification-message-content');
@@ -312,7 +428,7 @@ require_once '../includes/header_admin.php';
             // Display session messages
             <?php if (isset($_SESSION['form_message'])): ?>
                 displayNotification("<?php echo htmlspecialchars($_SESSION['form_message']); ?>", 
-                                  "<?php echo htmlspecialchars($_SESSION['form_message_type']); ?>");
+                                     "<?php echo htmlspecialchars($_SESSION['form_message_type']); ?>");
                 <?php
                 unset($_SESSION['form_message']);
                 unset($_SESSION['form_message_type']);

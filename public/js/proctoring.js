@@ -35,7 +35,7 @@ let INACTIVITY_THRESHOLD_SECONDS = 60;
 let idleDetectionInterval = null;
 
 let proctoringPhotoInterval = null;
-const PHOTO_CAPTURE_INTERVAL_MS = 60000;
+const PHOTO_CAPTURE_INTERVAL_MS = 180000;
 
 let currentQuizId = null;
 let currentAttemptId = null;
