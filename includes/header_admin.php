@@ -187,6 +187,13 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                         <i class="fas fa-fw fa-cog mr-3"></i> Settings
                     </a>
                 </li>
+              <li>
+    <a href="<?php echo BASE_URL; ?>admin/generate_auto_login.php"
+        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
+        <?php echo (basename($_SERVER['PHP_SELF']) == 'generate_auto_login.php.php') ? 'bg-accent text-white' : ''; ?>">
+        <i class="fas fa-fw fa-key mr-3"></i> Generate Login Tokens
+    </a>
+</li>
             </ul>
         </nav>
         <div class="p-4 border-t border-gray-700 text-sm">

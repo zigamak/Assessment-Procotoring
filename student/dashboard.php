@@ -2,6 +2,9 @@
 // student/dashboard.php
 // The main dashboard page for students.
 
+// Set timezone to Africa/Lagos (WAT, UTC+1)
+date_default_timezone_set('Africa/Lagos');
+
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/functions.php'; // Contains format_datetime() and display_message()
@@ -9,14 +12,47 @@ require_once '../includes/functions.php'; // Contains format_datetime() and disp
 // Include the student specific header. This also handles role enforcement.
 require_once '../includes/header_student.php';
 
-$message = ''; // Initialize message variable for feedback
+// Fallback display_message function if not defined in functions.php
+if (!function_exists('display_message')) {
+    function display_message($text, $type = 'info') {
+        $classes = [
+            'success' => 'bg-green-100 border-green-400 text-green-700',
+            'error' => 'bg-red-100 border-red-400 text-red-700',
+            'info' => 'bg-blue-100 border-blue-400 text-blue-700',
+        ];
+        $class = $classes[$type] ?? $classes['info'];
+        return "<div class='mb-4 px-4 py-3 rounded-md $class' role='alert'><strong class='font-bold'>" . ucfirst($type) . "!</strong> <span class='block sm:inline'>" . htmlspecialchars($text) . "</span></div>";
+    }
+}
+
+// Debug: Check if functions.php was loaded correctly
+if (!file_exists('../includes/functions.php')) {
+    error_log("Functions file not found at ../includes/functions.php");
+    $message = display_message("Server configuration error: Functions file missing.", "error");
+} elseif (!function_exists('format_datetime')) {
+    error_log("format_datetime function not defined in functions.php");
+    $message = display_message("Server configuration error: Required functions missing.", "error");
+} else {
+    $message = ''; // Initialize message variable for feedback
+}
+
 $all_assessments_for_display = []; // Will hold all assessments with their status
 $all_previous_attempts = []; // All attempts, to be sliced for display
 $attempts_summary_per_quiz = []; // Summary of attempts per quiz for dashboard cards
 $user_id = getUserId(); // Get the logged-in student's user_id
+$user_grade = null; // To store the user's grade
 
-// Fetch the logged-in user's name
-$logged_in_username = htmlspecialchars($_SESSION['username'] ?? 'Student'); // Default to 'Student' if not set
+// Fetch the logged-in user's name and grade
+try {
+    $stmt = $pdo->prepare("SELECT username, grade FROM users WHERE user_id = :user_id");
+    $stmt->execute(['user_id' => $user_id]);
+    $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $logged_in_username = htmlspecialchars($user_data['username'] ?? 'Student'); // Default to 'Student' if not set
+    $user_grade = $user_data['grade'] ?? null; // Get user's grade (e.g., "Grade 4" or NULL)
+} catch (PDOException $e) {
+    error_log("Fetch User Data Error: " . $e->getMessage());
+    $message = display_message("Could not fetch user data. Please try again later.", "error");
+}
 
 // --- START: Verification Check Integration ---
 $verification_completed = false;
@@ -81,13 +117,14 @@ try {
 $max_scores_per_quiz = [];
 
 try {
-    // Fetch ALL assessments
+    // Fetch assessments: those with no grade (grade IS NULL) or matching the user's grade
     $stmt = $pdo->prepare("
-        SELECT quiz_id, title, description, max_attempts, duration_minutes, assessment_fee
+        SELECT quiz_id, title, max_attempts, duration_minutes, open_datetime, grade, assessment_fee
         FROM quizzes
+        WHERE grade IS NULL OR grade = :user_grade
         ORDER BY created_at DESC
     ");
-    $stmt->execute();
+    $stmt->execute(['user_grade' => $user_grade]);
     $all_assessments_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     foreach ($all_assessments_raw as $assessment) {
@@ -274,19 +311,18 @@ try {
             </svg>
             All Assessments
         </h2>
-        <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12">
+        <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12 max-h-[80vh] overflow-y-auto">
             <?php if (empty($all_assessments_for_display)): ?>
-                <p class="text-gray-600">No assessments found.</p>
+                <p class="text-gray-600">No assessments available for your grade level.</p>
             <?php else: ?>
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attempts</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fee</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status/Actions</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Date and Time</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
@@ -297,34 +333,10 @@ try {
                                     <?php echo htmlspecialchars($assessment['title']); ?>
                                 </a>
                             </td>
-                            <td class="px-6 py-4 text-sm text-gray-900 max-w-xs overflow-hidden text-ellipsis">
-                                <?php
-                                $description = htmlspecialchars($assessment['description']);
-                                $short_description_limit = 15; // Number of words to show
-                                $words = explode(' ', $description);
-
-                                if (count($words) > $short_description_limit) {
-                                    $short_description = implode(' ', array_slice($words, 0, $short_description_limit)) . '...';
-                                    echo '<span id="short-desc-' . $assessment['quiz_id'] . '">' . $short_description . '</span>';
-                                    echo '<span id="full-desc-' . $assessment['quiz_id'] . '" class="hidden">' . $description . '</span>';
-                                    echo '<button onclick="toggleDescription(' . $assessment['quiz_id'] . ')" class="text-indigo-600 hover:text-indigo-800 ml-2 text-xs font-semibold bg-indigo-100 px-2 py-1 rounded-full transition duration-200">Read More</button>';
-                                } else {
-                                    echo $description;
-                                }
-                                ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php
-                                    $attempts_left = ($assessment['max_attempts'] == 0) ? 'Unlimited' : ($assessment['max_attempts'] - $assessment['attempts_taken']);
-                                    $attempts_display = ($assessment['max_attempts'] == 0) ? 'Unlimited' : htmlspecialchars($assessment['attempts_taken']) . ' of ' . htmlspecialchars($assessment['max_attempts']);
-                                    echo $attempts_display;
-                                ?>
-                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade'] ?? 'N/A'); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php
-                                    echo $assessment['assessment_fee'] > 0 ? '₦' . number_format($assessment['assessment_fee'], 2) : 'Free';
-                                ?>
+                                <?php echo $assessment['open_datetime'] ? date('j F, Y ga', strtotime($assessment['open_datetime'])) : 'Immediate'; ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <?php
@@ -334,26 +346,43 @@ try {
                                 $action_class = '';
                                 $action_title = '';
 
-                                if (!$verification_completed) {
+                                // Check if assessment is available based on open_datetime (5-minute window)
+                                $is_assessment_available = true;
+                                if ($assessment['open_datetime']) {
+                                    $open_time = strtotime($assessment['open_datetime']);
+                                    $current_time = time();
+                                    $five_minutes_before = $open_time - (5 * 60); // 5 minutes before open_datetime
+                                    if ($current_time < $five_minutes_before) {
+                                        $is_assessment_available = false;
+                                    }
+                                }
+
+                                if (!$is_assessment_available) {
+                                    $can_start_assessment = false;
+                                    $action_text = 'You cannot start the assessment yet';
+                                    $action_class = 'text-gray-400 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_title = 'This assessment is not yet available. It can be started 5 minutes before the scheduled time.';
+                                } elseif (!$verification_completed) {
                                     $can_start_assessment = false;
                                     $action_text = 'Verification Required';
-                                    $action_class = 'text-gray-400 cursor-not-allowed';
+                                    $action_class = 'text-gray-400 cursor-not-allowed text-base px-4 py-2 rounded-full';
                                     $action_title = 'Please complete your profile verification to start this assessment.';
                                 } elseif ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']) {
                                     $can_start_assessment = false;
                                     $action_text = 'Pay Now (₦' . number_format($assessment['assessment_fee'], 2) . ')';
                                     $action_link = BASE_URL . 'student/make_payment.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']) . '&amount=' . htmlspecialchars($assessment['assessment_fee']);
-                                    $action_class = 'text-orange-600 hover:text-orange-800 font-semibold bg-orange-100 px-3 py-1 rounded-full transition duration-200';
+                                    $action_class = 'text-orange-600 hover:text-orange-800 font-semibold bg-orange-100 px-4 py-2 rounded-full transition duration-200 text-base';
                                     $action_title = 'Payment required to start this assessment.';
                                 } elseif ($assessment['max_attempts'] !== 0 && $assessment['attempts_taken'] >= $assessment['max_attempts']) {
                                     $can_start_assessment = false;
                                     $action_text = 'Attempts Exhausted';
-                                    $action_class = 'text-red-600 cursor-not-allowed';
+                                    $action_class = 'text-red-600 cursor-not-allowed text-base px-4 py-2 rounded-full';
                                     $action_title = 'You have used all your attempts for this assessment.';
                                 } else {
                                     $action_text = 'Start Assessment';
                                     $action_link = BASE_URL . 'student/take_quiz.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']);
-                                    $action_class = 'text-green-600 hover:text-green-900 font-semibold bg-green-100 px-3 py-1 rounded-full transition duration-200';
+                                    $action_class = 'text-green-600 hover:text-green-900 font-semibold bg-green-100 px-4 py-2 rounded-full transition duration-200 text-base';
+                                    $action_title = 'Start this assessment now.';
                                 }
 
                                 if (!empty($action_link) && ($can_start_assessment || ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']))) {
@@ -378,7 +407,7 @@ try {
         </h2>
         <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12">
             <?php if (empty($all_previous_attempts)): ?>
-                <p class="text-gray-600">You have not completed any assessments yet.</p>
+                <p class="text-gray-600">No assessments completed yet.</p>
             <?php else: ?>
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -433,7 +462,7 @@ try {
                 </table>
                 <?php if (count($all_previous_attempts) > 5): ?>
                 <div class="mt-6 text-center">
-                    <a href="<?php echo BASE_URL; ?>student/assessments.php" class="inline-block bg-indigo-100 text-indigo-600 px-6 py-2 rounded-full hover:bg-indigo-200 font-semibold transition duration-300">
+                    <a href="<?php echo BASE_URL; ?>student/assessments.php" class="inline-block bg-indigo-100 text-indigo-600 px-6 py-2 rounded-full hover:bg-indigo-200 font-semibold transition duration-200">
                         View All History →
                     </a>
                 </div>
@@ -498,13 +527,14 @@ try {
         document.addEventListener('DOMContentLoaded', function() {
             const verificationModal = document.getElementById('verificationModal');
 
-            // Intercept clicks on 'Start Assessment' or 'Pay Now' if conditions are not met
+            // Intercept clicks on 'Start' or 'Pay Now' if conditions are not met
             document.querySelectorAll('a[href*="take_quiz.php"], a[href*="make_payment.php"]').forEach(link => {
                 link.addEventListener('click', function(event) {
                     const isVerificationRequiredText = event.target.textContent.includes('Verification Required');
                     const isAttemptsExhaustedText = event.target.textContent.includes('Attempts Exhausted');
+                    const isNotAvailableText = event.target.textContent.includes('You cannot start the assessment yet');
 
-                    if (isVerificationRequiredText || isAttemptsExhaustedText) {
+                    if (isVerificationRequiredText || isAttemptsExhaustedText || isNotAvailableText) {
                         event.preventDefault();
                         const title = event.target.getAttribute('title');
                         if (title) {
@@ -523,23 +553,6 @@ try {
                 });
             });
         });
-
-        // Function to toggle description visibility
-        function toggleDescription(quizId) {
-            const shortDesc = document.getElementById('short-desc-' + quizId);
-            const fullDesc = document.getElementById('full-desc-' + quizId);
-            const button = document.querySelector(`#short-desc-${quizId} ~ button`);
-
-            if (fullDesc.classList.contains('hidden')) {
-                shortDesc.classList.add('hidden');
-                fullDesc.classList.remove('hidden');
-                button.textContent = 'Show Less';
-            } else {
-                shortDesc.classList.remove('hidden');
-                fullDesc.classList.add('hidden');
-                button.textContent = 'Read More';
-            }
-        }
     </script>
 </body>
 </html>

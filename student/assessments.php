@@ -19,6 +19,35 @@ if (!$user_id) {
     exit();
 }
 
+// --- Fetch User's Grade ---
+// Initialize user's grade to null or empty string. An empty string is often easier for SQL WHERE clauses
+// if you want to treat "no grade" as a specific state.
+$logged_in_user_grade = '';
+// Attempt to get grade from session first to avoid repeated DB queries
+if (isset($_SESSION['user_grade'])) {
+    $logged_in_user_grade = $_SESSION['user_grade'];
+} else {
+    // If not in session, fetch it from the database
+    try {
+        $stmt_user_grade = $pdo->prepare("SELECT grade FROM users WHERE user_id = :user_id");
+        $stmt_user_grade->execute(['user_id' => $user_id]);
+        $user_data = $stmt_user_grade->fetch(PDO::FETCH_ASSOC);
+        if ($user_data && !empty($user_data['grade'])) {
+            $logged_in_user_grade = $user_data['grade'];
+            $_SESSION['user_grade'] = $logged_in_user_grade; // Store in session for future requests
+        } else {
+            // If user has no grade or it's empty, keep $logged_in_user_grade as an empty string.
+            // This will ensure the grade filter is not applied for such users.
+        }
+    } catch (PDOException $e) {
+        error_log("Error fetching user grade for quiz filtering: " . $e->getMessage());
+        $message .= display_message("Could not fetch your grade information. Some assessments may not be visible correctly.", "error");
+        // Fallback to empty string for grade filter on error
+        $logged_in_user_grade = '';
+    }
+}
+
+
 $attempts = []; // Array to hold fetched quiz attempts for overview
 $current_attempt = null; // Object to hold detailed data for a single attempt view
 
@@ -51,13 +80,33 @@ function calculate_percentage($score, $max_score) {
     return round(($score / $max_score) * 100, 2);
 }
 
-// Fetch all quizzes for the filter dropdown
+// Fetch all quizzes for the filter dropdown, applying grade visibility logic
 $all_quizzes_for_filters = [];
 try {
-    $stmt_quizzes = $pdo->query("SELECT quiz_id, title FROM quizzes ORDER BY title ASC");
+    $sql_quizzes_filter = "SELECT quiz_id, title FROM quizzes";
+    $quiz_filter_params = [];
+    $quiz_filter_where_clauses = [];
+
+    // Apply grade filtering:
+    // If user has a grade ($logged_in_user_grade is not empty),
+    // show quizzes with NULL grade (visible to all) OR quizzes matching their grade.
+    // If user has no grade (empty string), show all quizzes (no grade filter applied).
+    if (!empty($logged_in_user_grade)) {
+        $quiz_filter_where_clauses[] = "(grade IS NULL OR grade = :user_grade)";
+        $quiz_filter_params['user_grade'] = $logged_in_user_grade;
+    }
+
+    if (!empty($quiz_filter_where_clauses)) {
+        $sql_quizzes_filter .= " WHERE " . implode(" AND ", $quiz_filter_where_clauses);
+    }
+
+    $sql_quizzes_filter .= " ORDER BY title ASC";
+
+    $stmt_quizzes = $pdo->prepare($sql_quizzes_filter);
+    $stmt_quizzes->execute($quiz_filter_params);
     $all_quizzes_for_filters = $stmt_quizzes->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    error_log("View History Quiz Fetch Error: " . $e->getMessage());
+    error_log("View History Quiz Fetch Error (for filters): " . $e->getMessage());
     $message = display_message("Could not fetch assessment list for filters.", "error");
 }
 
@@ -341,9 +390,9 @@ if (!$view_attempt_id) {
         <div class="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-2 mb-4">
             <div class="relative flex-grow">
     <input type="text" name="search" id="search_input"
-           value="<?php echo htmlspecialchars($search_query); ?>"
-           class="form-input w-3/4 rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 pl-10 py-3 text-lg"
-           placeholder="Search assessments...">
+                value="<?php echo htmlspecialchars($search_query); ?>"
+                class="form-input w-3/4 rounded-md border-gray-300 shadow-sm focus:border-accent focus:ring focus:ring-accent focus:ring-opacity-50 pl-10 py-3 text-lg"
+                placeholder="Search assessments...">
     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
         <i class="fas fa-search"></i>
     </span>
@@ -505,39 +554,22 @@ if (!$view_attempt_id) {
                     }
                 });
 
-                // Handle Reset Filters button inside the modal
                 resetFiltersModalBtn.addEventListener('click', function() {
-                    // Reset all filter fields in the modal
+                    // Clear all filter inputs within the modal
                     document.getElementById('quiz_id').value = '';
                     document.getElementById('min_percentage').value = '';
                     document.getElementById('start_date').value = '';
                     document.getElementById('end_date').value = '';
-                    // Also reset the hidden search input if you want a full reset from the modal
-                    modalSearchInput.value = '';
+                    // Keep the search query if it was set from the main input
+                    // modalSearchInput.value = ''; // Uncomment this if you want to reset search too
 
-                    // If Select2 is used, trigger change event to update its display
-                    if (typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
-                        $('#quiz_id').val(null).trigger('change');
-                    }
-
-                    // Manually submit the form to clear filters
+                    // Submit the form to apply cleared filters (or navigate to base URL)
                     filterForm.submit();
                 });
-
-
-                // Initialize Select2 if it's used elsewhere (assuming this is part of a larger system)
-                if (typeof jQuery !== 'undefined' && typeof jQuery.fn.select2 !== 'undefined') {
-                    $('.select2-enabled').select2({
-                        placeholder: $(this).data('placeholder'),
-                        allowClear: $(this).data('allow-clear') || false,
-                        dropdownParent: filterModal // Ensure dropdown appears within the modal
-                    });
-                }
             });
         </script>
 
     <?php endif; ?>
-
 </div>
 
 <?php
