@@ -12,6 +12,11 @@ require_once '../includes/header_admin.php';
 $message = ''; // Initialize message variable for feedback
 $payments = []; // Array to hold fetched payment records
 
+// Pagination settings
+$records_per_page = 10; // Number of payments to display per page
+$current_page = isset($_GET['page']) && is_numeric($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($current_page - 1) * $records_per_page;
+
 // Filters
 $filter_user_id = sanitize_input($_GET['user_id'] ?? null);
 $filter_quiz_id = sanitize_input($_GET['quiz_id'] ?? null);
@@ -39,8 +44,17 @@ try {
     $message = display_message("Could not fetch assessment list for filters.", "error");
 }
 
+$total_payments = 0;
 try {
-    $sql = "
+    $sql_count = "
+        SELECT COUNT(*)
+        FROM payments p
+        JOIN users u ON p.user_id = u.user_id
+        JOIN quizzes q ON p.quiz_id = q.quiz_id
+        WHERE 1=1
+    ";
+
+    $sql_data = "
         SELECT
             p.payment_id,
             p.amount,
@@ -52,7 +66,7 @@ try {
         FROM payments p
         JOIN users u ON p.user_id = u.user_id
         JOIN quizzes q ON p.quiz_id = q.quiz_id
-        WHERE 1=1 -- Dummy condition to allow easy appending of AND clauses
+        WHERE 1=1
     ";
 
     $params = [];
@@ -80,12 +94,22 @@ try {
     }
 
     if (!empty($where_clauses)) {
-        $sql .= " AND " . implode(" AND ", $where_clauses);
+        $sql_count .= " AND " . implode(" AND ", $where_clauses);
+        $sql_data .= " AND " . implode(" AND ", $where_clauses);
     }
 
-    $sql .= " ORDER BY p.payment_date DESC"; // Order by most recent payment first
+    // Get total count
+    $stmt_count = $pdo->prepare($sql_count);
+    $stmt_count->execute($params);
+    $total_payments = $stmt_count->fetchColumn();
+    $total_pages = ceil($total_payments / $records_per_page);
 
-    $stmt = $pdo->prepare($sql);
+    // Fetch data with pagination
+    $sql_data .= " ORDER BY p.payment_date DESC LIMIT :limit OFFSET :offset";
+    $params['limit'] = $records_per_page;
+    $params['offset'] = $offset;
+
+    $stmt = $pdo->prepare($sql_data);
     $stmt->execute($params);
     $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -214,6 +238,90 @@ try {
         ::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
+
+        /* Custom tooltip styles */
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip-content {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 10px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%; /* Position the tooltip above the text */
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap; /* Prevent text wrapping */
+            font-size: 0.875rem; /* text-sm */
+        }
+
+        .tooltip-container:hover .tooltip-content {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .tooltip-content::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+
+        /* Popover styles */
+        .popover {
+            position: absolute;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 0.375rem;
+            padding: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            max-width: 300px;
+            word-wrap: break-word;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .popover-close {
+            float: right;
+            cursor: pointer;
+            font-weight: bold;
+            color: #999;
+            margin-left: 10px;
+        }
+        .popover-arrow {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #ccc;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .popover-arrow::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 7px solid #fff;
+            bottom: 1px;
+            left: -7px;
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans antialiased">
@@ -239,7 +347,6 @@ try {
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
@@ -251,9 +358,6 @@ try {
                         <tbody class="bg-white divide-y divide-gray-200">
                             <?php foreach ($payments as $payment): ?>
                             <tr>
-                                <td class="px-4 py-2 whitespace-nowrap font-medium text-gray-900">
-                                    <?php echo htmlspecialchars($payment['payment_id']); ?>
-                                </td>
                                 <td class="px-4 py-2 whitespace-nowrap text-gray-900">
                                     <?php echo htmlspecialchars($payment['student_username']); ?>
                                 </td>
@@ -278,8 +382,17 @@ try {
                                         <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
                                     </span>
                                 </td>
-                                <td class="px-4 py-2 whitespace-nowrap text-gray-900">
-                                    <?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?>
+                                <td class="px-4 py-2 whitespace-nowrap text-blue-600 hover:underline cursor-pointer transaction-ref-cell"
+                                    data-full-ref="<?php echo htmlspecialchars($payment['transaction_reference']); ?>">
+                                    <div class="tooltip-container">
+                                        <?php
+                                            $ref = htmlspecialchars($payment['transaction_reference'] ?: 'N/A');
+                                            echo (strlen($ref) > 15) ? substr($ref, 0, 12) . '...' : $ref;
+                                        ?>
+                                        <?php if (strlen($ref) > 15): ?>
+                                            <span class="tooltip-content"><?php echo $ref; ?></span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                                 <td class="px-4 py-2 whitespace-nowrap text-gray-900">
                                     <?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?>
@@ -289,6 +402,33 @@ try {
                         </tbody>
                     </table>
                 </div>
+
+                <?php if ($total_pages > 1): ?>
+                    <nav class="mt-6 flex justify-center" aria-label="Pagination">
+                        <ul class="flex items-center space-x-2">
+                            <?php if ($current_page > 1): ?>
+                                <li>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $current_page - 1])); ?>" class="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 hover:text-gray-700">Previous</a>
+                                </li>
+                            <?php endif; ?>
+
+                            <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                                <li>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $i])); ?>" class="px-3 py-2 leading-tight <?php echo ($i === $current_page) ? 'text-blue-600 bg-blue-50 border border-blue-300' : 'text-gray-500 bg-white border border-gray-300'; ?> rounded-lg hover:bg-gray-100 hover:text-gray-700">
+                                        <?php echo $i; ?>
+                                    </a>
+                                </li>
+                            <?php endfor; ?>
+
+                            <?php if ($current_page < $total_pages): ?>
+                                <li>
+                                    <a href="?<?php echo http_build_query(array_merge($_GET, ['page' => $current_page + 1])); ?>" class="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 hover:text-gray-700">Next</a>
+                                </li>
+                            <?php endif; ?>
+                        </ul>
+                    </nav>
+                <?php endif; ?>
+
             <?php endif; ?>
         </div>
     </div>
@@ -385,11 +525,10 @@ try {
                 sidebarOverlay.classList.remove('hidden');
                 setTimeout(() => sidebarOverlay.classList.remove('opacity-0'), 10); // Fade in overlay
                 document.body.classList.add('overflow-hidden'); // Prevent scrolling body
-                // Re-initialize Select2 or trigger resize if it's already open
-                // This is crucial for Select2 to calculate its width correctly when hidden elements become visible.
+                
+                // Trigger change on Select2 elements to force redraw and proper width calculation
                 $('.select2-enabled').each(function() {
-                    $(this).select2('open'); // Open temporarily to trigger width calculation
-                    $(this).select2('close'); // Then close it
+                    $(this).trigger('change');
                 });
             }
 
@@ -428,6 +567,68 @@ try {
             } else {
                 console.warn("jQuery or Select2 plugin not loaded. Select2 functionality will not work.");
             }
+
+            // --- Popover functionality for transaction reference ---
+            let currentPopover = null;
+
+            function showPopover(element, reference) {
+                // Remove any existing popover
+                if (currentPopover) {
+                    currentPopover.remove();
+                    currentPopover = null;
+                }
+
+                const popover = document.createElement('div');
+                popover.classList.add('popover');
+                popover.innerHTML = `
+                    <span class="popover-close">&times;</span>
+                    <strong>Transaction Reference:</strong><br>${reference}
+                    <div class="popover-arrow"></div>
+                `;
+                document.body.appendChild(popover);
+
+                // Position the popover
+                const rect = element.getBoundingClientRect();
+                popover.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (popover.offsetWidth / 2)}px`;
+                popover.style.top = `${rect.top + window.scrollY - popover.offsetHeight - 10}px`; // 10px above the element
+
+                // Adjust if popover goes off screen to the left
+                if (parseFloat(popover.style.left) < 0) {
+                    popover.style.left = '10px';
+                }
+                // Adjust if popover goes off screen to the right
+                if (parseFloat(popover.style.left) + popover.offsetWidth > window.innerWidth) {
+                    popover.style.left = `${window.innerWidth - popover.offsetWidth - 10}px`;
+                }
+
+                currentPopover = popover;
+
+                // Close popover on click outside
+                document.addEventListener('click', function handler(event) {
+                    if (currentPopover && !currentPopover.contains(event.target) && !element.contains(event.target)) {
+                        currentPopover.remove();
+                        currentPopover = null;
+                        document.removeEventListener('click', handler);
+                    }
+                });
+
+                // Close popover using the close button
+                popover.querySelector('.popover-close').addEventListener('click', () => {
+                    popover.remove();
+                    currentPopover = null;
+                });
+            }
+
+            document.querySelectorAll('.transaction-ref-cell').forEach(cell => {
+                // Add click listener for popover
+                cell.addEventListener('click', function() {
+                    const fullRef = this.dataset.fullRef;
+                    if (fullRef && fullRef !== 'N/A') {
+                        showPopover(this, fullRef);
+                    }
+                });
+            });
+            // --- End Popover functionality ---
         });
     </script>
 

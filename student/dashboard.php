@@ -156,7 +156,6 @@ try {
         }
 
         // Add the 'is_paid' status to each assessment for direct access in the loop
-        // FIX: Add is_paid status to the assessment array
         $assessment['is_paid'] = $paid_assessments[$assessment['quiz_id']] ?? false;
 
         // Fetch the number of attempts already made by the user for this specific quiz
@@ -173,7 +172,6 @@ try {
 
     // Fetch ALL previous assessment attempts by the current student
     // Also fetch max_score for each quiz for percentage calculation
-    // FIX: Populating all_previous_attempts with the fetched data
     $stmt = $pdo->prepare("
         SELECT
             qa.attempt_id,
@@ -195,7 +193,7 @@ try {
     ");
 
     $stmt->execute(['user_id' => $user_id]);
-    $all_previous_attempts = $stmt->fetchAll(PDO::FETCH_ASSOC); // FIX: Added this line
+    $all_previous_attempts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Populate max_scores_per_quiz for later use
     foreach ($all_previous_attempts as $attempt) {
@@ -213,7 +211,7 @@ try {
                 'total_attempts' => 0,
                 'completed_attempts' => 0,
                 'total_score_sum' => 0,
-                'max_score' => $attempt['max_possible_score'], // Already fetched
+                'max_score' => $attempt['max_possible_score'],
                 'passed_attempts' => 0,
                 'failed_attempts' => 0,
             ];
@@ -256,11 +254,111 @@ try {
     <title>Student Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/heroicons@2.1.1/dist/heroicons.js"></script>
+    <style>
+        /* Custom styles for truncating text and showing full text on hover */
+        .truncate-ellipsis {
+            max-width: 150px; /* Adjust width as needed */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            position: relative;
+        }
+        /* Tooltip styles */
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip-content {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 10px;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%; /* Position above the text */
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+            font-size: 0.875rem;
+        }
+        .tooltip-container:hover .tooltip-content {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tooltip-content::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        /* Popover styles */
+        .popover {
+            position: absolute;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 0.375rem;
+            padding: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            max-width: 300px;
+            word-wrap: break-word;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .popover-close {
+            float: right;
+            cursor: pointer;
+            font-weight: bold;
+            color: #999;
+            margin-left: 10px;
+        }
+        .popover-arrow {
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #ccc;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .popover-arrow::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-top: 7px solid #fff;
+            bottom: 1px;
+            left: -7px;
+        }
+        .table-compact th, .table-compact td {
+            padding: 8px; /* Reduced padding */
+            font-size: 0.875rem; /* Smaller font size */
+        }
+        .action-btn {
+            display: inline-block;
+            padding: 6px 16px; /* Longer but less wide */
+            font-size: 0.75rem; /* Smaller font size */
+            text-align: center;
+            white-space: nowrap;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto p-4 py-8 max-w-7xl">
-        <h1 class="text-4xl font-extrabold text-indigo-600 mb-8 flex items-center">
-            <svg class="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <div class="container mx-auto p-4 py-8 max-w-6xl"> <!-- Reduced max-width -->
+        <h1 class="text-3xl font-extrabold text-indigo-600 mb-8 flex items-center">
+            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
             </svg>
             Welcome, <?php echo ucfirst($logged_in_username); ?>!
@@ -270,18 +368,18 @@ try {
 
         <?php if (!$verification_completed): ?>
         <div id="verificationModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 transition-opacity duration-300">
-            <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
-                <h2 class="text-2xl font-bold text-red-600 mb-4 flex items-center">
-                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 transform transition-all duration-300 scale-100">
+                <h2 class="text-xl font-bold text-red-600 mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     Verification Required!
                 </h2>
-                <p class="text-gray-700 mb-6">
-                    To access assessments and other features, please complete your profile verification by uploading a passport/ID image and providing your **City, State, and Country**.
+                <p class="text-gray-700 mb-4 text-sm">
+                    To access assessments, please complete your profile verification by uploading a passport/ID image and providing your City, State, and Country.
                 </p>
-                <div class="flex justify-end space-x-4">
-                    <a href="<?php echo BASE_URL; ?>student/profile.php" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-full transition duration-300 transform hover:scale-105">
+                <div class="flex justify-end">
+                    <a href="<?php echo BASE_URL; ?>student/profile.php" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-4 rounded-full transition duration-300 transform hover:scale-105 text-sm">
                         Go to Profile
                     </a>
                 </div>
@@ -289,95 +387,121 @@ try {
         </div>
         <?php endif; ?>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div class="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8"> <!-- Reduced gap -->
+            <div class="bg-gradient-to-r from-indigo-50 to-white p-4 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
                 <div class="flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-700 mb-2">Assessments Available</h2>
-                        <p class="text-4xl font-bold text-indigo-600"><?php echo htmlspecialchars(count($all_assessments_for_display)); ?></p>
-                        <p class="text-sm text-gray-500 mt-1">Ready to take</p>
+                        <h2 class="text-base font-semibold text-gray-700 mb-1">Assessments Available</h2>
+                        <p class="text-2xl font-bold text-indigo-600"><?php echo htmlspecialchars(count($all_assessments_for_display)); ?></p>
+                        <p class="text-xs text-gray-500 mt-1">Ready to take</p>
                     </div>
-                    <svg class="w-12 h-12 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                 </div>
             </div>
-            <div class="bg-gradient-to-r from-green-50 to-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+            <div class="bg-gradient-to-r from-green-50 to-white p-4 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
                 <div class="flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-700 mb-2">Total Completed</h2>
-                        <p class="text-4xl font-bold text-green-600"><?php
+                        <h2 class="text-base font-semibold text-gray-700 mb-1">Total Completed</h2>
+                        <p class="text-2xl font-bold text-green-600"><?php
                             $total_completed = 0;
                             foreach ($attempts_summary_per_quiz as $summary) {
                                 $total_completed += $summary['completed_attempts'];
                             }
                             echo htmlspecialchars($total_completed);
                         ?></p>
-                        <p class="text-sm text-gray-500 mt-1">Assessments finished</p>
+                        <p class="text-xs text-gray-500 mt-1">Assessments finished</p>
                     </div>
-                    <svg class="w-12 h-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
                 </div>
             </div>
-            <div class="bg-gradient-to-r from-blue-50 to-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+            <div class="bg-gradient-to-r from-blue-50 to-white p-4 rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300">
                 <div class="flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-gray-700 mb-2">Assessments Passed</h2>
-                        <p class="text-4xl font-bold text-blue-600"><?php
+                        <h2 class="text-base font-semibold text-gray-700 mb-1">Assessments Passed</h2>
+                        <p class="text-2xl font-bold text-blue-600"><?php
                             $total_passed = 0;
                             foreach ($attempts_summary_per_quiz as $summary) {
                                 $total_passed += $summary['passed_attempts'];
                             }
                             echo htmlspecialchars($total_passed);
                         ?></p>
-                        <p class="text-sm text-gray-500 mt-1">Successful attempts</p>
+                        <p class="text-xs text-gray-500 mt-1">Successful attempts</p>
                     </div>
-                    <svg class="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
                     </svg>
                 </div>
             </div>
         </div>
 
-        <h2 class="text-2xl font-bold text-indigo-600 mb-6 flex items-center">
-            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
             </svg>
             All Assessments
         </h2>
-        <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12 max-h-[80vh] overflow-y-auto">
+        <div class="bg-white p-6 rounded-xl shadow-md overflow-x-auto mb-8 max-h-[60vh] overflow-y-auto"> <!-- Reduced padding and max-height -->
             <?php if (empty($all_assessments_for_display)): ?>
-                <p class="text-gray-600">No assessments available</p>
+                <p class="text-gray-600 text-sm">No assessments available</p>
             <?php else: ?>
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 table-compact">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Date and Time</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($all_assessments_for_display as $assessment): ?>
                         <tr class="hover:bg-gray-50 transition duration-200">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <a href="<?php echo BASE_URL; ?>student/take_quiz.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>" class="text-indigo-600 hover:text-indigo-800 font-medium">
-                                    <?php echo htmlspecialchars($assessment['title']); ?>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                                <a href="<?php echo BASE_URL; ?>student/take_quiz.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>" 
+                                   class="text-indigo-600 hover:text-indigo-800 font-medium truncate-ellipsis tooltip-container" 
+                                   data-full-text="<?php echo htmlspecialchars($assessment['title']); ?>">
+                                    <?php 
+                                        $title = htmlspecialchars($assessment['title']);
+                                        echo strlen($title) > 25 ? substr($title, 0, 22) . '...' : $title;
+                                    ?>
+                                    <?php if (strlen($title) > 25): ?>
+                                        <span class="tooltip-content"><?php echo $title; ?></span>
+                                    <?php endif; ?>
                                 </a>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade_display']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                               <?php
-                                echo $assessment['open_datetime']
-                                    ? date('j F, Y g:i', strtotime($assessment['open_datetime'])) . ' ' . strtoupper(date('a', strtotime($assessment['open_datetime'])))
-                                    : 'Immediate';
-                               ?>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php echo htmlspecialchars($assessment['grade_display']); ?>">
+                                <?php 
+                                    $grade_display = htmlspecialchars($assessment['grade_display']);
+                                    echo strlen($grade_display) > 15 ? substr($grade_display, 0, 12) . '...' : $grade_display;
+                                ?>
+                                <?php if (strlen($grade_display) > 15): ?>
+                                    <span class="tooltip-content"><?php echo $grade_display; ?></span>
+                                <?php endif; ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php
+                                    echo $assessment['open_datetime']
+                                        ? date('j F, Y g:i a', strtotime($assessment['open_datetime']))
+                                        : 'Immediate';
+                                ?>">
+                                <?php
+                                    $date_display = $assessment['open_datetime']
+                                        ? date('j F, Y g:i a', strtotime($assessment['open_datetime']))
+                                        : 'Immediate';
+                                    echo htmlspecialchars(strlen($date_display) > 15 ? substr($date_display, 0, 12) . '...' : $date_display);
+                                ?>
+                                <?php if (strlen($date_display) > 15): ?>
+                                    <span class="tooltip-content"><?php echo htmlspecialchars($date_display); ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                 <?php
                                 $can_start_assessment = true;
                                 $action_link = '';
@@ -402,33 +526,33 @@ try {
                                 if ($is_expired) {
                                     $can_start_assessment = false;
                                     $action_text = 'Expired';
-                                    $action_class = 'text-red-600 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_class = 'text-red-600 cursor-not-allowed action-btn';
                                     $action_title = 'This assessment is no longer available as its duration has expired.';
                                 } elseif (!$is_assessment_available) {
                                     $can_start_assessment = false;
-                                    $action_text = 'Not Available Yet'; // Changed for clarity
-                                    $action_class = 'text-gray-400 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_text = 'Not Available';
+                                    $action_class = 'text-gray-400 cursor-not-allowed action-btn';
                                     $action_title = 'This assessment is not yet available. It can be started 5 minutes before the scheduled time.';
                                 } elseif (!$verification_completed) {
                                     $can_start_assessment = false;
-                                    $action_text = 'Verification Required';
-                                    $action_class = 'text-gray-400 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_text = 'Verify Profile';
+                                    $action_class = 'text-gray-400 cursor-not-allowed action-btn';
                                     $action_title = 'Please complete your profile verification to start this assessment.';
                                 } elseif ($assessment['assessment_fee'] > 0 && !$assessment['is_paid']) {
                                     $can_start_assessment = false;
-                                    $action_text = 'Pay Now (₦' . number_format($assessment['assessment_fee'], 2) . ')';
+                                    $action_text = 'Pay Assessment';
                                     $action_link = BASE_URL . 'student/make_payment.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']) . '&amount=' . htmlspecialchars($assessment['assessment_fee']);
-                                    $action_class = 'text-orange-600 hover:text-orange-800 font-semibold bg-orange-100 px-4 py-2 rounded-full transition duration-200 text-base';
+                                    $action_class = 'text-orange-600 hover:text-orange-800 font-semibold bg-orange-100 action-btn transition duration-200';
                                     $action_title = 'Payment required to start this assessment.';
                                 } elseif ($assessment['max_attempts'] !== 0 && $assessment['attempts_taken'] >= $assessment['max_attempts']) {
                                     $can_start_assessment = false;
-                                    $action_text = 'Attempts Exhausted'; // Ensured this text is used
-                                    $action_class = 'text-red-600 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_text = 'Attempts Done';
+                                    $action_class = 'text-red-600 cursor-not-allowed action-btn';
                                     $action_title = 'You have used all your attempts for this assessment.';
                                 } else {
-                                    $action_text = 'Start Assessment';
+                                    $action_text = 'Start';
                                     $action_link = BASE_URL . 'student/take_quiz.php?quiz_id=' . htmlspecialchars($assessment['quiz_id']);
-                                    $action_class = 'text-green-600 hover:text-green-900 font-semibold bg-green-100 px-4 py-2 rounded-full transition duration-200 text-base';
+                                    $action_class = 'text-green-600 hover:text-green-900 font-semibold bg-green-100 action-btn transition duration-200';
                                     $action_title = 'Start this assessment now.';
                                 }
 
@@ -446,25 +570,25 @@ try {
             <?php endif; ?>
         </div>
 
-        <h2 class="text-2xl font-bold text-indigo-600 mb-6 flex items-center">
-            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
             </svg>
             Your Recent Assessment Results
         </h2>
-        <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto mb-12">
+        <div class="bg-white p-6 rounded-xl shadow-md overflow-x-auto mb-8"> <!-- Reduced padding -->
             <?php if (empty($all_previous_attempts)): ?>
-                <p class="text-gray-600">No assessments completed yet.</p>
+                <p class="text-gray-600 text-sm">No assessments completed yet.</p>
             <?php else: ?>
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 table-compact">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Started</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
@@ -474,8 +598,17 @@ try {
                             if ($displayed_attempts_count >= 5) break; // Limit to 5 attempts
                         ?>
                         <tr class="hover:bg-gray-50 transition duration-200">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($attempt['quiz_title']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php echo htmlspecialchars($attempt['quiz_title']); ?>">
+                                <?php 
+                                    $quiz_title = htmlspecialchars($attempt['quiz_title']);
+                                    echo strlen($quiz_title) > 25 ? substr($quiz_title, 0, 22) . '...' : $quiz_title;
+                                ?>
+                                <?php if (strlen($quiz_title) > 25): ?>
+                                    <span class="tooltip-content"><?php echo $quiz_title; ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                 <?php
                                 if ($attempt['is_completed'] && isset($max_scores_per_quiz[$attempt['quiz_id']]) && $max_scores_per_quiz[$attempt['quiz_id']] > 0) {
                                     $percentage_score = ($attempt['score'] / $max_scores_per_quiz[$attempt['quiz_id']]) * 100;
@@ -485,18 +618,30 @@ try {
                                 }
                                 ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php echo format_datetime($attempt['start_time']); ?>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php echo format_datetime($attempt['start_time']); ?>">
+                                <?php 
+                                    $start_time = format_datetime($attempt['start_time']);
+                                    echo htmlspecialchars(strlen($start_time) > 15 ? substr($start_time, 0, 12) . '...' : $start_time);
+                                ?>
+                                <?php if (strlen($start_time) > 15): ?>
+                                    <span class="tooltip-content"><?php echo htmlspecialchars($start_time); ?></span>
+                                <?php endif; ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php echo $attempt['end_time'] ? format_datetime($attempt['end_time']) : 'N/A'; ?>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php echo $attempt['end_time'] ? format_datetime($attempt['end_time']) : 'N/A'; ?>">
+                                <?php 
+                                    $end_time = $attempt['end_time'] ? format_datetime($attempt['end_time']) : 'N/A';
+                                    echo htmlspecialchars(strlen($end_time) > 15 ? substr($end_time, 0, 12) . '...' : $end_time);
+                                ?>
+                                <?php if (strlen($end_time) > 15): ?>
+                                    <span class="tooltip-content"><?php echo htmlspecialchars($end_time); ?></span>
+                                <?php endif; ?>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo $attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
                                 <a href="<?php echo BASE_URL; ?>student/assessments.php?attempt_id=<?php echo htmlspecialchars($attempt['attempt_id']); ?>"
-                                   class="text-indigo-600 hover:text-indigo-800 font-semibold bg-indigo-100 px-3 py-1 rounded-full transition duration-200">View Details</a>
+                                   class="text-indigo-600 hover:text-indigo-800 font-semibold bg-indigo-100 action-btn transition duration-200">View</a>
                             </td>
                         </tr>
                         <?php
@@ -506,8 +651,8 @@ try {
                     </tbody>
                 </table>
                 <?php if (count($all_previous_attempts) > 5): ?>
-                <div class="mt-6 text-center">
-                    <a href="<?php echo BASE_URL; ?>student/assessments.php" class="inline-block bg-indigo-100 text-indigo-600 px-6 py-2 rounded-full hover:bg-indigo-200 font-semibold transition duration-200">
+                <div class="mt-4 text-center">
+                    <a href="<?php echo BASE_URL; ?>student/assessments.php" class="inline-block bg-indigo-100 text-indigo-600 px-4 py-1 rounded-full hover:bg-indigo-200 font-semibold transition duration-200 text-sm">
                         View All History →
                     </a>
                 </div>
@@ -515,36 +660,45 @@ try {
             <?php endif; ?>
         </div>
 
-        <h2 class="text-2xl font-bold text-indigo-600 mb-6 flex items-center">
-            <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
             </svg>
             Overall Assessment Statistics
         </h2>
-        <div class="bg-white p-8 rounded-2xl shadow-lg overflow-x-auto">
+        <div class="bg-white p-6 rounded-xl shadow-md overflow-x-auto"> <!-- Reduced padding -->
             <?php if (empty($attempts_summary_per_quiz)): ?>
-                <p class="text-gray-600">No assessment statistics available yet.</p>
+                <p class="text-gray-600 text-sm">No assessment statistics available yet.</p>
             <?php else: ?>
-                <table class="min-w-full divide-y divide-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 table-compact">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Attempts</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed Attempts</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passed</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Average Score</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment Title</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Completed</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Passed</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Failed</th>
+                            <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Score</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($attempts_summary_per_quiz as $quiz_id => $summary): ?>
                         <tr class="hover:bg-gray-50 transition duration-200">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['title']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['total_attempts']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['completed_attempts']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['passed_attempts']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['failed_attempts']); ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 truncate-ellipsis tooltip-container" 
+                                data-full-text="<?php echo htmlspecialchars($summary['title']); ?>">
+                                <?php 
+                                    $summary_title = htmlspecialchars($summary['title']);
+                                    echo strlen($summary_title) > 25 ? substr($summary_title, 0, 22) . '...' : $summary_title;
+                                ?>
+                                <?php if (strlen($summary_title) > 25): ?>
+                                    <span class="tooltip-content"><?php echo $summary_title; ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['total_attempts']); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['completed_attempts']); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['passed_attempts']); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($summary['failed_attempts']); ?></td>
+                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                                 <?php
                                 if ($summary['completed_attempts'] > 0 && $summary['max_score'] > 0) {
                                     $avg_percentage = (($summary['total_score_sum'] / $summary['completed_attempts']) / $summary['max_score']) * 100;
@@ -572,16 +726,16 @@ try {
         document.addEventListener('DOMContentLoaded', function() {
             const verificationModal = document.getElementById('verificationModal');
 
-            // Intercept clicks on 'Start' or 'Pay Now' if conditions are not met
+            // Intercept clicks on 'Start' or 'Pay for Assessment' if conditions are not met
             document.querySelectorAll('a[href*="take_quiz.php"], a[href*="make_payment.php"]').forEach(link => {
                 link.addEventListener('click', function(event) {
                     // Check if the link's text corresponds to a disabled action
                     const actionText = event.target.textContent.trim();
                     const titleAttribute = event.target.getAttribute('title');
 
-                    if (actionText === 'Verification Required' || 
-                        actionText === 'Attempts Exhausted' || 
-                        actionText === 'Not Available Yet' || // Updated text
+                    if (actionText === 'Verify Profile' || 
+                        actionText === 'Attempts Done' || 
+                        actionText === 'Not Available' || 
                         actionText === 'Expired') {
                         
                         event.preventDefault();
@@ -592,12 +746,73 @@ try {
                         }
                     } else if (verificationModal && verificationModal.classList.contains('flex')) {
                         // This block handles cases where the modal is already visible
-                        // and the user tries to click a valid "Start" link.
-                        if (event.target.href.includes('take_quiz.php') && !<?php echo json_encode($verification_completed); ?>) {
+                        // and the user tries to click a valid "Start" or "Pay for Assessment" link
+                        if ((event.target.href.includes('take_quiz.php') || event.target.href.includes('make_payment.php')) && !<?php echo json_encode($verification_completed); ?>) {
                             event.preventDefault();
-                            alert('Please complete your profile verification before starting any assessment.');
+                            alert('Please complete your profile verification before proceeding with assessments or payments.');
                             // The modal is already visible, so no need to change its classes here
                         }
+                    }
+                });
+            });
+
+            // Popover functionality for truncated text
+            let currentPopover = null;
+
+            function showPopover(element, text) {
+                // Remove any existing popover
+                if (currentPopover) {
+                    currentPopover.remove();
+                    currentPopover = null;
+                }
+
+                const popover = document.createElement('div');
+                popover.classList.add('popover');
+                popover.innerHTML = `
+                    <span class="popover-close">×</span>
+                    <strong>Full Text:</strong><br>${text}
+                    <div class="popover-arrow"></div>
+                `;
+                document.body.appendChild(popover);
+
+                // Position the popover
+                const rect = element.getBoundingClientRect();
+                popover.style.left = `${rect.left + window.scrollX + (rect.width / 2) - (popover.offsetWidth / 2)}px`;
+                popover.style.top = `${rect.top + window.scrollY - popover.offsetHeight - 10}px`; // 10px above the element
+
+                // Adjust if popover goes off screen to the left
+                if (parseFloat(popover.style.left) < 0) {
+                    popover.style.left = '10px';
+                }
+                // Adjust if popover goes off screen to the right
+                if (parseFloat(popover.style.left) + popover.offsetWidth > window.innerWidth) {
+                    popover.style.left = `${window.innerWidth - popover.offsetWidth - 10}px`;
+                }
+
+                currentPopover = popover;
+
+                // Close popover on click outside
+                document.addEventListener('click', function handler(event) {
+                    if (currentPopover && !currentPopover.contains(event.target) && !element.contains(event.target)) {
+                        currentPopover.remove();
+                        currentPopover = null;
+                        document.removeEventListener('click', handler);
+                    }
+                });
+
+                // Close popover using the close button
+                popover.querySelector('.popover-close').addEventListener('click', () => {
+                    popover.remove();
+                    currentPopover = null;
+                });
+            }
+
+            // Add click listeners for truncated text cells
+            document.querySelectorAll('.truncate-ellipsis.tooltip-container').forEach(cell => {
+                cell.addEventListener('click', function() {
+                    const fullText = this.dataset.fullText;
+                    if (fullText) {
+                        showPopover(this, fullText);
                     }
                 });
             });

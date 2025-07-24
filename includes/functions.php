@@ -15,9 +15,16 @@ if (session_status() == PHP_SESSION_NONE) {
 // Make sure db.php defines $pdo as a global variable or returns it.
 require_once __DIR__ . '/db.php'; // Using __DIR__ for robust path inclusion
 
-// NOTE: getUserId() and logout() are assumed to be defined in includes/session.php
-// and should NOT be redefined here to avoid "Cannot redeclare" errors.
-// Therefore, their definitions have been removed from this file.
+// Define BASE_URL if it's not already defined in a config file
+// This is a placeholder; you should define it properly in a config file like db.php or a dedicated config.php
+if (!defined('BASE_URL')) {
+    define('BASE_URL', 'http://localhost/assessment/'); // Adjust as per your actual base URL
+}
+
+// IMPORTANT: isLoggedIn(), getUserRole(), getUserId(), and possibly logout()
+// are assumed to be defined SOLELY in includes/session.php.
+// Their definitions have been REMOVED from this file to prevent redeclaration errors.
+// Ensure session.php is included wherever these functions are used.
 
 
 /**
@@ -61,41 +68,44 @@ function display_message($message, $type = 'info') {
     // In a real application, you would store these in $_SESSION
     // and retrieve them on the next page load, then display them
     // using appropriate HTML/CSS (e.g., a modal or dismissible alert).
-    echo "<div class='p-3 my-3 rounded-md text-white ";
+    $class = '';
     switch ($type) {
         case 'success':
-            echo "bg-green-500";
+            $class = 'bg-green-100 border-l-4 border-green-500 text-green-700';
             break;
         case 'error':
-            echo "bg-red-500";
+            $class = 'bg-red-100 border-l-4 border-red-500 text-red-700';
             break;
         case 'warning':
-            echo "bg-yellow-500";
+            $class = 'bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700';
             break;
         case 'info':
         default:
-            echo "bg-blue-500";
+            $class = 'bg-blue-100 border-l-4 border-blue-500 text-blue-700';
             break;
     }
-    echo "'>" . sanitize_input($message) . "</div>";
+    return "<div class=\"{$class} p-4 mb-4 rounded-lg shadow-md\" role=\"alert\"><p class=\"font-bold\">" . ucfirst($type) . "!</p><p>" . sanitize_input($message) . "</p></div>";
 }
+
 
 /**
  * Checks if the currently logged-in user has an 'admin' role.
- * Assumes user role is stored in $_SESSION['role'].
+ * Assumes user role is stored in $_SESSION['role'] and isLoggedIn() is available.
  * @return bool True if the user is an admin, false otherwise.
  */
 function isAdmin() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
+    // Requires isLoggedIn() and getUserRole() from session.php
+    return isLoggedIn() && getUserRole() === 'admin';
 }
 
 /**
  * Checks if the currently logged-in user has a 'student' role.
- * Assumes user role is stored in $_SESSION['role'].
+ * Assumes user role is stored in $_SESSION['role'] and isLoggedIn() is available.
  * @return bool True if the user is a student, false otherwise.
  */
 function isStudent() {
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'student';
+    // Requires isLoggedIn() and getUserRole() from session.php
+    return isLoggedIn() && getUserRole() === 'student';
 }
 
 /**
@@ -107,8 +117,7 @@ function isStudent() {
  * @param string $redirect_url The URL to redirect to if the role check fails.
  */
 function enforceRole($required_role, $redirect_url) {
-    // Check if user is logged in at all
-    // isLoggedIn() and getUserRole() are assumed to be in session.php
+    // Requires isLoggedIn() and getUserRole() from session.php
     if (!isLoggedIn() || getUserRole() !== $required_role) {
         redirect($redirect_url);
     }
@@ -117,10 +126,37 @@ function enforceRole($required_role, $redirect_url) {
 
 /**
  * Retrieves the email of the currently logged-in user from the database.
- * Assumes a global $pdo (PDO object) is available and getUserId() is defined
- * (e.g., from includes/session.php).
+ * Assumes a global $pdo (PDO object) is available and getUserId() is defined in session.php.
  *
  * @return string|null The user's email address, or null if not found or not logged in.
+ */
+function getUserEmail() {
+    global $pdo; // Access the global PDO object
+    $user_id = getUserId(); // Get the user ID from the session (defined in session.php)
+
+    if ($user_id) {
+        try {
+            $stmt = $pdo->prepare("SELECT email FROM users WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $user_id]);
+            $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($user_data && isset($user_data['email'])) {
+                return $user_data['email'];
+            }
+        } catch (PDOException $e) {
+            error_log("Error fetching user email in getUserEmail(): " . $e->getMessage());
+            return null;
+        }
+    }
+    return null; // Return null if user_id is not found or no email is retrieved
+}
+
+
+/**
+ * Fetches all details for a given user ID from the database.
+ *
+ * @param PDO $pdo The PDO database connection object.
+ * @param int $user_id The ID of the user to fetch details for.
+ * @return array|null An associative array of user details, or null if not found.
  */
 function fetchUserDetails($pdo, $user_id) {
     try {
@@ -152,7 +188,6 @@ function format_datetime($datetime_str, $format = 'M d, Y h:i A') {
         return 'Invalid Date'; // Or handle as per your preference
     }
 }
-
 
 // Add more general utility functions as needed.
 // For example, functions to validate emails, etc.

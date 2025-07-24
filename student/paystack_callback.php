@@ -1,5 +1,6 @@
 <?php
 // student/paystack_callback.php
+
 // Handles the callback from Paystack, verifies the transaction, updates payments table,
 // sends confirmation email, and redirects appropriately.
 
@@ -179,9 +180,10 @@ if ($response === false) {
                     $stmt_check_token->execute(['user_id' => $current_user_id]);
                     $existing_token = $stmt_check_token->fetchColumn();
 
+                    // Generate a new token if one doesn't exist, or reuse the existing one.
+                    $auto_login_token = $existing_token ?: bin2hex(random_bytes(32)); // Always ensure a token exists
+
                     if (!$existing_token) {
-                        // If no existing token, generate a new one.
-                        $auto_login_token = bin2hex(random_bytes(32));
                         $stmt_update_user = $pdo->prepare("
                             UPDATE users
                             SET auto_login_token = :token
@@ -191,16 +193,14 @@ if ($response === false) {
                             'token' => $auto_login_token,
                             'user_id' => $current_user_id
                         ]);
-                    } else {
-                        // Otherwise, use the existing token.
-                        $auto_login_token = $existing_token;
                     }
+
 
                     // --- Send confirmation email if not already sent ---
                     if (!$payment_record['email_sent']) {
                         $auto_login_link = BASE_URL . "auth/auto_login.php?token=" . urlencode($auto_login_token);
                         ob_start(); // Start output buffering to capture email template content.
-                        require '../includes/email_templates/assessment_reminder_email.php'; // Load the email template.
+                        require '../includes/email_templates/assessment_payment_confirmation.php'; // Load the email template.
                         $email_body = ob_get_clean(); // Get the buffered content and clean the buffer.
 
                         // Replace placeholders in the email body with actual data.
@@ -217,6 +217,7 @@ if ($response === false) {
                         $email_body = str_replace('{{transaction_reference}}', htmlspecialchars($transaction_reference), $email_body);
                         $email_body = str_replace('{{payment_date}}', date('F j, Y, g:i a', strtotime($transaction_date_paystack)), $email_body);
                         $email_body = str_replace('{{message}}', "Thank you for your payment! You can access your assessment using the link below. You will receive a reminder three days before the assessment opens.", $email_body);
+
 
                         $subject = "Your Mackenny Assessment Payment Confirmation";
 
@@ -299,12 +300,12 @@ if ($response === false) {
             $stmt_update_status = $pdo->prepare("
                 UPDATE payments
                 SET status = 'failed',
-                    gateway_response = :gateway_response,
+                    gateway_response = :paystack_gateway_response,
                     updated_at = NOW()
                 WHERE transaction_reference = :reference AND quiz_id = :quiz_id
             ");
             $stmt_update_status->execute([
-                'gateway_response' => $paystack_gateway_response,
+                'paystack_gateway_response' => $paystack_gateway_response,
                 'reference' => $transaction_reference,
                 'quiz_id' => $quiz_id_from_callback
             ]);
@@ -329,4 +330,5 @@ if ($verification_successful) {
     redirect(BASE_URL . 'auth/payment.php?quiz_id=' . urlencode($quiz_id_from_callback) . '&amount=' . urlencode($assessment_fee));
 }
 exit(); // Ensure no further code is executed after redirection.
+
 ?>

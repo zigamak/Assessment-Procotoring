@@ -52,10 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } elseif (empty($title)) {
         $_SESSION['form_message'] = "Assessment title is required.";
         $_SESSION['form_message_type'] = 'error';
-    } elseif (empty($selected_grades_array)) { // New validation for grades
-        $_SESSION['form_message'] = "At least one grade level must be selected.";
-        $_SESSION['form_message_type'] = 'error';
     }
+    // --- MODIFICATION START: Removed validation for grade selection ---
+    // elseif (empty($selected_grades_array)) {
+    //     $_SESSION['form_message'] = "At least one grade level must be selected.";
+    //     $_SESSION['form_message_type'] = 'error';
+    // }
+    // --- MODIFICATION END ---
     else {
         try {
             $stmt = $pdo->prepare("
@@ -72,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'max_attempts' => $max_attempts,
                 'duration_minutes' => $duration_minutes,
                 'open_datetime' => $open_datetime,
-                'grade' => $grade, // This will now be a comma-separated string
+                'grade' => $grade, // This will now be a comma-separated string or NULL
                 'is_paid' => $is_paid,
                 'assessment_fee' => $assessment_fee,
                 'quiz_id' => $quiz_id
@@ -191,13 +194,13 @@ require_once '../includes/header_admin.php'; // Only include once at the top
                             <?php foreach ($allPossibleGrades as $gradeOption): ?>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="grades[]" value="<?php echo htmlspecialchars($gradeOption); ?>"
-                                           class="form-checkbox h-5 w-5 text-navy-900"
-                                           <?php echo in_array($gradeOption, $current_grades_for_display) ? 'checked' : ''; ?>>
+                                            class="form-checkbox h-5 w-5 text-navy-900"
+                                            <?php echo in_array($gradeOption, $current_grades_for_display) ? 'checked' : ''; ?>>
                                     <span class="ml-2 text-gray-700"><?php echo htmlspecialchars($gradeOption); ?></span>
                                 </label>
                             <?php endforeach; ?>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">Select one or more grades this assessment applies to.</p>
+                        <p class="text-xs text-gray-500 mt-2">Select one or more grades this assessment applies to, or leave all unchecked for no specific grade assignment.</p>
                     </div>
                     <div>
                         <label for="edit_max_attempts" class="block text-gray-700 text-sm font-bold mb-2">Max Attempts (0 for unlimited):</label>

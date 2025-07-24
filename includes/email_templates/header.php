@@ -26,7 +26,7 @@
             text-align: center;
         }
         .header img {
-            max-width: 200px;
+            max-width: 10%;
             height: auto;
         }
         .header h1 {

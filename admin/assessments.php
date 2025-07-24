@@ -31,38 +31,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $attempt_ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
                 // 1. Delete associated proctoring logs (depends on quiz_attempts)
-                // This must be done BEFORE deleting quiz_attempts
                 if (!empty($attempt_ids)) {
                     $placeholders = implode(',', array_fill(0, count($attempt_ids), '?'));
                     $stmt = $pdo->prepare("DELETE FROM proctoring_logs WHERE attempt_id IN ($placeholders)");
                     $stmt->execute($attempt_ids);
-                    // error_log("Deleted proctoring_logs for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
                 }
 
                 // 2. Delete associated proctoring images (depends directly on quiz_id)
                 $stmt = $pdo->prepare("DELETE FROM proctoring_images WHERE quiz_id = :quiz_id");
                 $stmt->execute(['quiz_id' => $quiz_id]);
-                // error_log("Deleted proctoring_images for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
 
                 // 3. Delete associated quiz attempts (depends on quiz_id)
                 $stmt = $pdo->prepare("DELETE FROM quiz_attempts WHERE quiz_id = :quiz_id");
                 $stmt->execute(['quiz_id' => $quiz_id]);
-                // error_log("Deleted quiz_attempts for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
 
                 // 4. Delete associated payments (depends on quiz_id)
                 $stmt = $pdo->prepare("DELETE FROM payments WHERE quiz_id = :quiz_id");
                 $stmt->execute(['quiz_id' => $quiz_id]);
-                // error_log("Deleted payments for quiz_id: " . $quiz_id . ". Rows affected: " . $stmt->rowCount());
 
-                // 5. Delete associated questions and options
-                // This assumes 'questions' has ON DELETE CASCADE to 'options'
-                // and 'quizzes' has ON DELETE CASCADE to 'questions'
-                // If not, you might need: DELETE FROM questions WHERE quiz_id = :quiz_id;
-                // For robustness, even with CASCADE, explicit deletes are sometimes added for clarity or if cascade setup is uncertain.
-                // However, the cleanest way is via foreign key cascades.
-                // Let's assume you have ON DELETE CASCADE from quizzes to questions.
-
-                // 6. Delete the assessment itself
+                // 5. Delete the assessment itself
                 $stmt = $pdo->prepare("DELETE FROM quizzes WHERE quiz_id = :quiz_id");
                 if ($stmt->execute(['quiz_id' => $quiz_id])) {
                     $pdo->commit();
@@ -87,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Fetch all assessments (rest of the file remains the same)
+// Fetch all assessments
 try {
     $stmt = $pdo->query("
         SELECT quiz_id, title, description, max_attempts, duration_minutes, grade,
@@ -198,60 +185,50 @@ require_once '../includes/header_admin.php';
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <div class="flex items-center space-x-2 justify-end">
-                                        <a href="view_assessment.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
-                                           class="text-blue-600 hover:text-blue-800 flex items-center">
-                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                    <div class="relative dropdown">
+                                        <button type="button" class="inline-flex justify-center w-full rounded-md px-2 py-1 text-gray-700 hover:bg-gray-100 focus:outline-none"
+                                                onclick="toggleDropdown(this)">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path>
                                             </svg>
-                                            View
-                                        </a>
-                                        <div class="relative dropdown">
-                                            <button type="button" class="inline-flex justify-center w-full rounded-md px-2 py-1 text-gray-700 hover:bg-gray-100 focus:outline-none"
-                                                    onclick="toggleDropdown(this)">
-                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path>
-                                                </svg>
-                                            </button>
-                                            <div class="dropdown-content origin-top-right right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
-                                                <div class="py-1" role="menu" aria-orientation="vertical">
-                                                    <a href="edit_assessment.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
-                                                       class="dropdown-item block px-4 py-2 text-sm text-gray-700 hover:bg-navy-900 hover:text-white w-full text-left flex items-center"
-                                                       role="menuitem">
-                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-                                                        </svg>
-                                                        Edit Assessment
-                                                    </a>
-                                                    <?php if ($assessment['is_paid'] && $assessment['assessment_fee'] !== null && $assessment['assessment_fee'] > 0): ?>
-                                                        <button onclick="showPaymentLink('<?php echo htmlspecialchars(BASE_URL . '/auth/payment.php?quiz_id=' . $assessment['quiz_id'] . '&amount=' . $assessment['assessment_fee']); ?>')"
-                                                                class="dropdown-item block px-4 py-2 text-sm text-gray-700 hover:bg-navy-900 hover:text-white w-full text-left flex items-center"
-                                                                role="menuitem">
-                                                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
-                                                            </svg>
-                                                            Payment Link
-                                                        </button>
-                                                    <?php endif; ?>
-                                                    <button type="button" onclick="openDeleteModal(<?php echo htmlspecialchars($assessment['quiz_id']); ?>, '<?php echo htmlspecialchars($assessment['title']); ?>')"
-                                                            class="dropdown-item block px-4 py-2 text-sm text-red-600 hover:bg-red-600 hover:text-white w-full text-left flex items-center"
-                                                            role="menuitem">
-                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                                                        </svg>
-                                                        Delete
-                                                    </button>
-                                                </div>
+                                        </button>
+                                        <div class="dropdown-content origin-top-right right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                            <div class="py-1" role="menu" aria-orientation="vertical">
+                                                <a href="view_assessment.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
+                                                   class="dropdown-item block px-4 py-2 text-sm text-gray-700 hover:bg-navy-900 hover:text-white w-full text-left flex items-center"
+                                                   role="menuitem">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                                    </svg>
+                                                    View Assessment
+                                                </a>
+                                                <a href="questions.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
+                                                   class="dropdown-item block px-4 py-2 text-sm text-gray-700 hover:bg-navy-900 hover:text-white w-full text-left flex items-center"
+                                                   role="menuitem">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path>
+                                                    </svg>
+                                                    Manage Questions
+                                                </a>
+                                                <a href="edit_assessment.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
+                                                   class="dropdown-item block px-4 py-2 text-sm text-gray-700 hover:bg-navy-900 hover:text-white w-full text-left flex items-center"
+                                                   role="menuitem">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                                                    </svg>
+                                                    Edit Assessment
+                                                </a>
+                                                <button type="button" onclick="openDeleteModal(<?php echo htmlspecialchars($assessment['quiz_id']); ?>, '<?php echo htmlspecialchars($assessment['title']); ?>')"
+                                                        class="dropdown-item block px-4 py-2 text-sm text-red-600 hover:bg-red-600 hover:text-white w-full text-left flex items-center"
+                                                        role="menuitem">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                    </svg>
+                                                    Delete
+                                                </button>
                                             </div>
                                         </div>
-                                        <a href="<?php echo BASE_URL; ?>admin/questions.php?quiz_id=<?php echo htmlspecialchars($assessment['quiz_id']); ?>"
-                                           class="text-navy-900 hover:text-navy-700 flex items-center">
-                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path>
-                                            </svg>
-                                            Questions
-                                        </a>
                                     </div>
                                 </td>
                             </tr>
@@ -259,27 +236,6 @@ require_once '../includes/header_admin.php';
                     </tbody>
                 </table>
             <?php endif; ?>
-        </div>
-
-        <div id="paymentLinkModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
-            <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
-                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Payment Link</h2>
-                <p class="text-gray-600 mb-4">Copy the link below to share with users for registration and payment.</p>
-                <div class="bg-gray-100 p-3 rounded-md">
-                    <input id="paymentLinkInput" type="text" readonly
-                           class="w-full bg-transparent text-gray-700 focus:outline-none">
-                </div>
-                <div class="flex justify-between space-x-4 mt-6">
-                    <button type="button" onclick="copyPaymentLink()"
-                            class="bg-navy-900 hover:bg-navy-700 text-white font-semibold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300">
-                        Copy to Clipboard
-                    </button>
-                    <button type="button" onclick="document.getElementById('paymentLinkModal').classList.add('hidden');"
-                            class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-300">
-                        Close
-                    </button>
-                </div>
-            </div>
         </div>
 
         <div id="deleteConfirmationModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
@@ -327,42 +283,18 @@ require_once '../includes/header_admin.php';
                 currentOpenDropdown.classList.remove('show');
                 currentOpenDropdown = null;
             }
-            // Close modals if clicking outside them
-            if (e.target.id === 'paymentLinkModal') {
-                e.target.classList.add('hidden');
-            }
+            // Close delete modal if clicking outside
             if (e.target.id === 'deleteConfirmationModal') {
-                e.target.classList.add('hidden');
+                closeDeleteModal();
             }
         });
 
-        function showPaymentLink(link) {
-            document.getElementById('paymentLinkInput').value = link;
-            document.getElementById('paymentLinkModal').classList.remove('hidden');
-            if (currentOpenDropdown) {
-                currentOpenDropdown.classList.remove('show'); // Close dropdown when modal opens
-                currentOpenDropdown = null;
-            }
-        }
-
-        async function copyPaymentLink() {
-            try {
-                const input = document.getElementById('paymentLinkInput');
-                await navigator.clipboard.writeText(input.value);
-                displayNotification('Payment link copied to clipboard!', 'success');
-            } catch (err) {
-                displayNotification('Failed to copy payment link.', 'error');
-                console.error('Copy failed:', err);
-            }
-        }
-
-        // Functions for the new delete confirmation modal
         function openDeleteModal(quizId, title) {
             document.getElementById('quizIdToDelete').value = quizId;
             document.getElementById('assessmentTitleToDelete').textContent = title;
             document.getElementById('deleteConfirmationModal').classList.remove('hidden');
             if (currentOpenDropdown) {
-                currentOpenDropdown.classList.remove('show'); // Close dropdown when modal opens
+                currentOpenDropdown.classList.remove('show');
                 currentOpenDropdown = null;
             }
         }
@@ -371,7 +303,6 @@ require_once '../includes/header_admin.php';
             document.getElementById('deleteConfirmationModal').classList.add('hidden');
         }
 
-        // Generic notification functions
         function displayNotification(message, type) {
             const notificationContainer = document.getElementById('form-notification');
             const messageContentElement = document.getElementById('notification-message-content');

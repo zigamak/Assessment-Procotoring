@@ -37,7 +37,8 @@ try {
             p.status,
             p.transaction_reference,
             p.payment_date,
-            q.title AS quiz_title
+            q.title AS quiz_title,
+            q.description AS quiz_description
         FROM payments p
         JOIN quizzes q ON p.quiz_id = q.quiz_id
         WHERE p.user_id = :user_id
@@ -87,10 +88,38 @@ try {
     <title>Your Payments</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/heroicons@2.1.1/dist/heroicons.js"></script>
+    <style>
+        /* Tooltip styles */
+        .tooltip-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip {
+            visibility: hidden;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 8px;
+            position: absolute;
+            z-index: 60; /* Higher than modals */
+            bottom: 125%; /* Position above the text */
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap; /* Prevent wrapping */
+        }
+
+        .tooltip-container:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="min-h-screen flex flex-col">
-        <!-- Header -->
         <header class="bg-white shadow-md p-4 flex items-center justify-between fixed w-full z-10 top-0">
             <div class="flex items-center">
                 <h1 class="text-2xl font-bold text-indigo-600 flex items-center">
@@ -105,11 +134,9 @@ try {
             </div>
         </header>
 
-        <!-- Main Content -->
         <main class="flex-1 p-4 lg:p-8 mt-16 w-full max-w-5xl mx-auto">
             <?php echo $message; // Display any feedback messages ?>
 
-            <!-- Filter Button -->
             <div class="mb-8 flex justify-end">
                 <button onclick="toggleFilterModal()" class="bg-indigo-600 text-white px-6 py-2 rounded-full hover:bg-indigo-700 transition duration-300 flex items-center">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -119,7 +146,6 @@ try {
                 </button>
             </div>
 
-            <!-- Filter Modal -->
             <div id="filterModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden transition-opacity duration-300">
                 <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-xl w-full transform transition-all duration-300 scale-100">
                     <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
@@ -185,7 +211,6 @@ try {
                 </div>
             </div>
 
-            <!-- Payments Table -->
             <div class="bg-white p-6 rounded-2xl shadow-lg overflow-x-auto">
                 <?php if (empty($payments)): ?>
                     <p class="text-center text-gray-600 py-8">No payment records found matching your criteria.</p>
@@ -193,7 +218,6 @@ try {
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment ID</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assessment</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -203,8 +227,7 @@ try {
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             <?php foreach ($payments as $payment): ?>
-                            <tr class="hover:bg-gray-50 transition duration-200">
-                                <td class="px-4 py-4 whitespace-nowrap font-medium text-gray-900"><?php echo htmlspecialchars($payment['payment_id']); ?></td>
+                            <tr class="hover:bg-gray-50 transition duration-200 cursor-pointer" onclick="showPaymentDetails(<?php echo htmlspecialchars(json_encode($payment)); ?>)">
                                 <td class="px-4 py-4 whitespace-normal text-gray-900 max-w-xs"><?php echo htmlspecialchars($payment['quiz_title']); ?></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-gray-900">₦<?php echo number_format(htmlspecialchars($payment['amount']), 2); ?></td>
                                 <td class="px-4 py-4 whitespace-nowrap">
@@ -222,8 +245,17 @@ try {
                                         <?php echo htmlspecialchars(ucfirst($payment['status'])); ?>
                                     </span>
                                 </td>
-                                <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?></td>
-                                <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?></td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900 max-w-[120px] truncate tooltip-container">
+                                    <div class="truncate"><?php echo htmlspecialchars($payment['transaction_reference'] ?: 'N/A'); ?></div>
+                                    <?php if ($payment['transaction_reference'] && strlen($payment['transaction_reference']) > 15) : // Example: show tooltip if longer than 15 chars ?>
+                                    <span class="tooltip"><?php echo htmlspecialchars($payment['transaction_reference']); ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900 max-w-[150px] truncate tooltip-container">
+                                    <?php $formatted_date_time = format_datetime($payment['payment_date'], 'j F Y, h:i A'); ?>
+                                    <div class="truncate"><?php echo htmlspecialchars($formatted_date_time); ?></div>
+                                    <span class="tooltip"><?php echo htmlspecialchars($formatted_date_time); ?></span>
+                                </td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -231,6 +263,24 @@ try {
                 <?php endif; ?>
             </div>
         </main>
+    </div>
+
+    <div id="paymentDetailModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden transition-opacity duration-300">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-lg w-full transform transition-all duration-300 scale-100">
+            <h2 class="text-xl font-bold text-indigo-600 mb-4 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                </svg>
+                Payment Details
+            </h2>
+            <div id="paymentDetailsContent" class="text-gray-700">
+                </div>
+            <div class="mt-6 text-right">
+                <button type="button" onclick="togglePaymentDetailModal()" class="bg-indigo-600 text-white px-6 py-2 rounded-full hover:bg-indigo-700 transition duration-300">
+                    Close
+                </button>
+            </div>
+        </div>
     </div>
 
     <?php
@@ -243,6 +293,69 @@ try {
             const modal = document.getElementById('filterModal');
             modal.classList.toggle('hidden');
             modal.classList.toggle('flex');
+        }
+
+        function togglePaymentDetailModal() {
+            const modal = document.getElementById('paymentDetailModal');
+            modal.classList.toggle('hidden');
+            modal.classList.toggle('flex'); // Add/remove flex to re-center
+        }
+
+        function showPaymentDetails(payment) {
+            const detailContent = document.getElementById('paymentDetailsContent');
+            const formattedDate = new Date(payment.payment_date).toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+
+            let statusClass = '';
+            switch (payment.status) {
+                case 'completed': statusClass = 'bg-green-100 text-green-800'; break;
+                case 'pending': statusClass = 'bg-yellow-100 text-yellow-800'; break;
+                case 'failed': statusClass = 'bg-red-100 text-red-800'; break;
+                case 'abandoned': statusClass = 'bg-gray-100 text-gray-800'; break;
+                default: statusClass = 'bg-gray-100 text-gray-800'; break;
+            }
+
+            detailContent.innerHTML = `
+                <div class="grid grid-cols-2 gap-y-3 gap-x-4">
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Payment ID:</p>
+                        <p class="text-base font-semibold text-gray-900">${payment.payment_id}</p>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Assessment:</p>
+                        <p class="text-base font-semibold text-gray-900">${payment.quiz_title}</p>
+                    </div>
+                    <div class="col-span-2">
+                        <p class="text-sm font-medium text-gray-500">Assessment Description:</p>
+                        <p class="text-base text-gray-900">${payment.quiz_description || 'N/A'}</p>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Amount:</p>
+                        <p class="text-base font-semibold text-gray-900">₦${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Status:</p>
+                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">
+                            ${payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </span>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Transaction Reference:</p>
+                        <p class="text-base text-gray-900">${payment.transaction_reference || 'N/A'}</p>
+                    </div>
+                    <div class="col-span-2 sm:col-span-1">
+                        <p class="text-sm font-medium text-gray-500">Payment Date:</p>
+                        <p class="text-base text-gray-900">${formattedDate}</p>
+                    </div>
+                </div>
+            `;
+            togglePaymentDetailModal();
         }
     </script>
 </body>

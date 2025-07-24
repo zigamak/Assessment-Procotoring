@@ -42,6 +42,10 @@
             color: #ffffff;
             border-radius: 8px 8px 0 0;
         }
+        .header img {
+            max-width: 20%;
+            height: auto;
+        }
         .header h2 {
             margin: 0;
             font-size: 26px;
@@ -74,20 +78,21 @@
             border-collapse: collapse;
             margin: 20px 0;
             font-size: 14px;
+            border: 1px solid #1a202c;
         }
         .details-table th,
         .details-table td {
             padding: 12px 15px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #1a202c;
             text-align: left;
             vertical-align: top;
         }
         .details-table th {
             background-color: #f2f2f2;
-            color: #0a1930;
+            color: #1a202c;
             font-weight: bold;
             white-space: nowrap;
-            width: 35%; /* Adjust as needed */
+            width: 35%;
         }
         .details-table td {
             background-color: #ffffff;
@@ -168,7 +173,7 @@
             .details-table th, .details-table td { padding: 10px !important; display: block; width: auto !important; }
             .details-table th { background-color: #0a1930; color: #ffffff; border-bottom: none; }
             .details-table td { border-top: none; padding-top: 5px !important; padding-bottom: 20px !important; }
-            .details-table tr { margin-bottom: 20px; display: block; border: 1px solid #e0e0e0; border-radius: 5px; overflow: hidden; }
+            .details-table tr { margin-bottom: 20px; display: block; border: 1px solid #1a202c; border-radius: 5px; overflow: hidden; }
             .button { padding: 12px 24px !important; font-size: 15px !important; }
         }
     </style>
@@ -179,6 +184,7 @@
             <table class="outer-table" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-collapse: separate; border-spacing: 0;">
                 <tr>
                     <td class="header" style="background-color: #0a1930; padding: 30px 20px; text-align: center; color: #ffffff; border-radius: 8px 8px 0 0;">
+                        <img src="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png" alt="Mackenny Assessment Logo" style="max-width: 20%; height: auto;" />
                         <h2 style="margin: 0; font-size: 26px; font-weight: bold; line-height: 1.2;">{{header_text}}</h2>
                     </td>
                 </tr>
@@ -188,42 +194,42 @@
                         <p style="margin-top: 0; margin-bottom: 15px;">We are pleased to confirm that your payment for the following assessment has been successfully processed.</p>
 
                         <h3 style="color: #0a1930; margin-top: 30px; margin-bottom: 15px; font-size: 18px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px;">Assessment Details</h3>
-                        <table class="details-table" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
+                        <table class="details-table" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; border: 1px solid #1a202c;">
                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Assessment Title</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #ffffff;">{{quiz_title}}</td>
-                            </tr>
-                            <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Description</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{description}}</td>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Assessment Title</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #ffffff;">{{quiz_title}}</td>
                             </tr>
                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Start Date and Time</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{open_datetime}}</td>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Description</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{description}}</td>
                             </tr>
                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Duration</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{duration_minutes}} minutes</td>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Start Date and Time</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{open_datetime}}</td>
                             </tr>
                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Maximum Attempts</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{max_attempts}}</td>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Duration</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{duration_minutes}} minutes</td>
                             </tr>
                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Assessment Fee</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc;">₦{{amount}}</td>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Maximum Attempts</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{max_attempts}}</td>
                             </tr>
-                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Grade</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{grade}}</td>
+                            <tr>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Assessment Fee</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc;">₦{{amount}}</td>
                             </tr>
-                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Transaction Reference</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{transaction_reference}}</td>
+                            <tr>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Grade</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{grade}}</td>
                             </tr>
-                             <tr>
-                                <th style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #0a1930; font-weight: bold; white-space: nowrap; width: 35%;">Payment Date</th>
-                                <td style="padding: 12px 15px; border: 1px solid #e0e0e0; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{payment_date}}</td>
+                            <tr>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Transaction Reference</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #fcfcfc;">{{transaction_reference}}</td>
+                            </tr>
+                            <tr>
+                                <th style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2; color: #1a202c; font-weight: bold; white-space: nowrap; width: 35%;">Payment Date</th>
+                                <td style="padding: 12px 15px; border: 1px solid #1a202c; text-align: left; vertical-align: top; background-color: #f2f2f2;">{{payment_date}}</td>
                             </tr>
                         </table>
 
@@ -244,12 +250,12 @@
                 </tr>
                 <tr>
                     <td class="footer" style="background-color: #e8e8e8; text-align: center; font-size: 0.85em; color: #777777; padding: 20px; border-radius: 0 0 8px 8px;">
-                        <p style="margin: 0 0 5px 0;">&copy; <?php echo date("Y"); ?> Mackenny Assessment. All rights reserved.</p>
+                        <p style="margin: 0 0 5px 0;">© <?php echo date("Y"); ?> Mackenny Assessment. All rights reserved.</p>
                         <p style="margin: 0;">If you have any questions, contact us at <a href="mailto:support@mackennyassessment.com" style="color: #0a1930; text-decoration: none;">support@mackennyassessment.com</a>.</p>
                     </td>
                 </tr>
             </table>
-            </div>
+        </div>
     </center>
 </body>
 </html>

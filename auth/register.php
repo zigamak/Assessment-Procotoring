@@ -5,7 +5,6 @@
 require_once '../includes/session.php';
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
-require_once '../includes/send_email.php';
 
 $message = '';
 $current_step = isset($_SESSION['registration_step']) ? (int)$_SESSION['registration_step'] : 1;
@@ -22,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($step === 1) {
         $_SESSION['reg_data']['first_name'] = sanitize_input($_POST['first_name'] ?? '');
         $_SESSION['reg_data']['last_name'] = sanitize_input($_POST['last_name'] ?? '');
-        $_SESSION['reg_data']['username'] = sanitize_input($_POST['username'] ?? '');
+        $_SESSION['reg_data']['username'] = sanitize_input($_POST['username'] ?? $_SESSION['reg_data']['username'] ?? '');
         $_SESSION['reg_data']['email'] = sanitize_input($_POST['email'] ?? '');
 
         // Validate Step 1
@@ -38,10 +37,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "An account with this email address already exists.";
             } else {
                 // Validate username if provided
-                $username_to_use = $_SESSION['reg_data']['username'];
-                if (!empty($username_to_use)) {
+                $username_to_check = $_SESSION['reg_data']['username'];
+                if (!empty($username_to_check)) {
                     $stmt_check_user_username = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = :username");
-                    $stmt_check_user_username->execute(['username' => $username_to_use]);
+                    $stmt_check_user_username->execute(['username' => $username_to_check]);
                     if ($stmt_check_user_username->fetchColumn() > 0) {
                         $message = "The chosen username is already taken. Please choose another or leave it blank to auto-generate one.";
                     }
@@ -69,14 +68,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($step === 3) {
         $_SESSION['reg_data']['date_of_birth'] = sanitize_input($_POST['date_of_birth'] ?? '');
-        $_SESSION['reg_data']['grade'] = sanitize_input($_POST['grade'] ?? '');
+        // Modify this line to store "Grade X" in the session data
+        $_SESSION['reg_data']['grade'] = "Grade " . sanitize_input($_POST['grade'] ?? '');
         $_SESSION['reg_data']['address'] = sanitize_input($_POST['address'] ?? '');
         $_SESSION['reg_data']['gender'] = sanitize_input($_POST['gender'] ?? '');
 
         // Handle passport image upload
-        $passport_image = '';
+        $passport_image = $_SESSION['reg_data']['passport_image_path'] ?? '';
         if (isset($_FILES['passport_image']) && $_FILES['passport_image']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../uploads/passports/';
+            $upload_dir = '../Uploads/passports/';
             if (!is_dir($upload_dir)) {
                 mkdir($upload_dir, 0755, true);
             }
@@ -84,14 +84,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upload_path = $upload_dir . $file_name;
             if (move_uploaded_file($_FILES['passport_image']['tmp_name'], $upload_path)) {
                 $passport_image = $file_name;
+                $_SESSION['reg_data']['passport_image_path'] = $passport_image;
             } else {
                 $message = "Failed to upload passport image.";
             }
+        } elseif (empty($passport_image)) {
+            $message = "Passport Image is required.";
         }
 
         // Validate Step 3
         if (empty($_SESSION['reg_data']['date_of_birth']) || empty($_SESSION['reg_data']['grade']) || empty($_SESSION['reg_data']['address']) || empty($_SESSION['reg_data']['gender']) || empty($passport_image)) {
-            $message = "Date of Birth, Grade, Address, Gender, and Passport Image are required.";
+            $message = $message ?: "Date of Birth, Grade, Address, Gender, and Passport Image are required.";
         } else {
             try {
                 // Auto-generate username if not provided
@@ -112,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $role = 'student';
-                // Insert user without password_hash, reset_token, auto_login_token fields
+                // Insert user into the database
                 $stmt = $pdo->prepare("
                     INSERT INTO users (
                         first_name, last_name, username, email, city, state, country,
@@ -133,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'state' => $_SESSION['reg_data']['state'],
                     'country' => $_SESSION['reg_data']['country'],
                     'date_of_birth' => $_SESSION['reg_data']['date_of_birth'],
-                    'grade' => $_SESSION['reg_data']['grade'],
+                    'grade' => $_SESSION['reg_data']['grade'], // This now stores "Grade X"
                     'address' => $_SESSION['reg_data']['address'],
                     'gender' => $_SESSION['reg_data']['gender'],
                     'passport_image_path' => $passport_image,
@@ -142,25 +145,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 if ($result) {
-                    ob_start();
-                    require '../includes/email_templates/registration_confirmation_email.php';
-                    $email_body = ob_get_clean();
-                    $email_body = str_replace('{{username}}', htmlspecialchars($username_to_use), $email_body);
-                    $subject = "Registration Confirmation - Mackenny Assessment";
+                    // Set session data for confirmation page
+                    $_SESSION['new_user_username'] = $username_to_use;
+                    $_SESSION['new_user_email'] = $_SESSION['reg_data']['email'];
 
-                    if (sendEmail($_SESSION['reg_data']['email'], $subject, $email_body)) {
-                        $_SESSION['form_message'] = "Registration successful! Your application will be reviewed, and we'll get back to you.";
-                        $_SESSION['form_message_type'] = 'success';
-                    } else {
-                        error_log("Failed to send confirmation email to " . $_SESSION['reg_data']['email']);
-                        $_SESSION['form_message'] = "Registration successful, but we could not send the confirmation email.";
-                        $_SESSION['form_message_type'] = 'warning';
-                    }
-
-                    // Clear session data
+                    // Clear registration session data
                     unset($_SESSION['reg_data']);
                     unset($_SESSION['registration_step']);
+
+                    // Redirect to confirmation page
                     redirect('registration_confirmed.php');
+                    exit;
                 } else {
                     $message = "Registration failed. Please try again.";
                 }
@@ -174,7 +169,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($message)) {
         $_SESSION['form_message'] = $message;
         $_SESSION['form_message_type'] = 'error';
-        $_SESSION['registration_step'] = $step;
+        header('Location: register.php');
+        exit;
+    }
+}
+
+// Handle direct navigation to steps (e.g., from "Previous" button)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['step'])) {
+    $requested_step = (int)$_GET['step'];
+    if ($requested_step >= 1 && $requested_step <= $current_step) {
+        $_SESSION['registration_step'] = $requested_step;
+        $current_step = $requested_step;
+    }
+    if ($requested_step > $current_step) {
         header('Location: register.php');
         exit;
     }
@@ -190,10 +197,20 @@ $current_state = htmlspecialchars($_SESSION['reg_data']['state'] ?? '');
 $current_country = htmlspecialchars($_SESSION['reg_data']['country'] ?? '');
 $current_school_name = htmlspecialchars($_SESSION['reg_data']['school_name'] ?? '');
 $current_date_of_birth = htmlspecialchars($_SESSION['reg_data']['date_of_birth'] ?? '');
-$current_grade = htmlspecialchars($_SESSION['reg_data']['grade'] ?? '');
+
+// When loading the current grade, if it's stored as "Grade X", extract just the number for the value attribute
+// Otherwise, keep it as is if it's already just the number (for initial load or if already processed)
+$current_grade_display = htmlspecialchars($_SESSION['reg_data']['grade'] ?? '');
+$current_grade_value = $current_grade_display;
+if (strpos($current_grade_display, 'Grade ') === 0) {
+    $current_grade_value = str_replace('Grade ', '', $current_grade_display);
+}
+
+
 $current_address = htmlspecialchars($_SESSION['reg_data']['address'] ?? '');
 $current_gender = htmlspecialchars($_SESSION['reg_data']['gender'] ?? '');
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -207,7 +224,7 @@ $current_gender = htmlspecialchars($_SESSION['reg_data']['gender'] ?? '');
     .hover\:bg-navy-700:hover { background-color: #2c3e6a; }
     .focus\:ring-navy-900:focus { --tw-ring-color: #0a1930; }
     .text-theme-color { color: #1e4b31; }
-    .step-circle { 
+    .step-circle {
         @apply w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold;
     }
     .step-active { @apply bg-navy-900; }
@@ -215,294 +232,300 @@ $current_gender = htmlspecialchars($_SESSION['reg_data']['gender'] ?? '');
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-blue-50 min-h-screen flex items-center justify-center">
-
-<div class="container mx-auto px-4 py-8">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
-        <div class="bg-navy-900 text-white p-12 flex flex-col justify-center">
-            <h1 class="text-4xl font-bold mb-4">Join Mackenny Assessment</h1>
-            <p class="text-lg mb-6">
-                Complete the three-step registration process to submit your application.
-                Your details will be reviewed, and you will be notified upon approval.
-            </p>
-            <p class="text-sm italic">
-                Start your journey towards academic excellence today!
-            </p>
-        </div>
-        
-        <div class="p-12 relative">
-            <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Registration - Step <?= $current_step ?>/3</h2>
-            
-            <div class="flex justify-center mb-6">
-                <div class="flex items-center space-x-4">
-                    <div class="step-circle <?= $current_step >= 1 ? 'step-active' : 'step-inactive' ?>">1</div>
-                    <div class="w-12 h-1 bg-gray-300 <?= $current_step >= 2 ? 'bg-navy-900' : '' ?>"></div>
-                    <div class="step-circle <?= $current_step >= 2 ? 'step-active' : 'step-inactive' ?>">2</div>
-                    <div class="w-12 h-1 bg-gray-300 <?= $current_step >= 3 ? 'bg-navy-900' : '' ?>"></div>
-                    <div class="step-circle <?= $current_step >= 3 ? 'step-active' : 'step-inactive' ?>">3</div>
+    <div class="container mx-auto px-4 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+            <div class="bg-navy-900 text-white p-12 flex flex-col justify-center">
+                <div class="header">
+                    <img src="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png" alt="Mackenny Assessment Logo" style="max-width: 20%; height: auto;">
+                    <h1 class="text-4xl font-bold mb-4">Join Mackenny Assessment</h1>
                 </div>
+                <p class="text-lg mb-6">
+                    Complete the three-step registration process to submit your application.
+                    Your details will be reviewed, and you will be notified upon approval.
+                </p>
+                <p class="text-sm italic">
+                    Start your journey towards academic excellence today!
+                </p>
             </div>
 
-            <div id="form-notification" class="absolute top-0 left-0 w-full px-4 py-3 rounded-md hidden" role="alert">
-                <strong class="font-bold"></strong>
-                <span class="block sm:inline" id="notification-message-content"></span>
-                <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="hideNotification()">
-                    <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" class="h-6 w-6">
-                        <path d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </span>
-            </div>
+            <div class="p-12 relative">
+                <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Registration - Step <?= $current_step ?>/3</h2>
 
-            <form action="register.php" method="POST" enctype="multipart/form-data" class="space-y-6">
-                <input type="hidden" name="step" value="<?= $current_step ?>">
-                
-                <?php if ($current_step === 1): ?>
-                    <div>
-                        <label for="first_name" class="block text-gray-700 text-sm font-semibold mb-2">First Name</label>
-                        <input 
-                            type="text" 
-                            id="first_name" 
-                            name="first_name" 
-                            required
-                            maxlength="50"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your first name"
-                            value="<?= $current_first_name ?>"
-                        >
+                <div class="flex justify-center mb-6">
+                    <div class="flex items-center space-x-4">
+                        <div class="step-circle <?= $current_step >= 1 ? 'step-active' : 'step-inactive' ?>">1</div>
+                        <div class="w-12 h-1 bg-gray-300 <?= $current_step >= 2 ? 'bg-navy-900' : '' ?>"></div>
+                        <div class="step-circle <?= $current_step >= 2 ? 'step-active' : 'step-inactive' ?>">2</div>
+                        <div class="w-12 h-1 bg-gray-300 <?= $current_step >= 3 ? 'bg-navy-900' : '' ?>"></div>
+                        <div class="step-circle <?= $current_step >= 3 ? 'step-active' : 'step-inactive' ?>">3</div>
                     </div>
-                    <div>
-                        <label for="last_name" class="block text-gray-700 text-sm font-semibold mb-2">Last Name</label>
-                        <input 
-                            type="text" 
-                            id="last_name" 
-                            name="last_name" 
-                            required
-                            maxlength="50"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your last name"
-                            value="<?= $current_last_name ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">Username (Optional)</label>
-                        <input 
-                            type="text" 
-                            id="username" 
-                            name="username" 
-                            maxlength="50"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Choose a username (or leave blank to auto-generate)"
-                            value="<?= $current_username ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="email" class="block text-gray-700 text-sm font-semibold mb-2">Email</label>
-                        <input 
-                            type="email" 
-                            id="email" 
-                            name="email" 
-                            required
-                            maxlength="100"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your email address"
-                            value="<?= $current_email ?>"
-                        >
-                    </div>
-                <?php elseif ($current_step === 2): ?>
-                    <div>
-                        <label for="city" class="block text-gray-700 text-sm font-semibold mb-2">City</label>
-                        <input 
-                            type="text" 
-                            id="city" 
-                            name="city" 
-                            required
-                            maxlength="100"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your city"
-                            value="<?= $current_city ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="state" class="block text-gray-700 text-sm font-semibold mb-2">State</label>
-                        <input 
-                            type="text" 
-                            id="state" 
-                            name="state" 
-                            required
-                            maxlength="100"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your state"
-                            value="<?= $current_state ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="country" class="block text-gray-700 text-sm font-semibold mb-2">Country</label>
-                        <input 
-                            type="text" 
-                            id="country" 
-                            name="country" 
-                            required
-                            maxlength="100"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your country"
-                            value="<?= $current_country ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="school_name" class="block text-gray-700 text-sm font-semibold mb-2">School Name</label>
-                        <input 
-                            type="text" 
-                            id="school_name" 
-                            name="school_name" 
-                            required
-                            maxlength="255"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your school name"
-                            value="<?= $current_school_name ?>"
-                        >
-                    </div>
-                <?php elseif ($current_step === 3): ?>
-                    <div>
-                        <label for="date_of_birth" class="block text-gray-700 text-sm font-semibold mb-2">Date of Birth</label>
-                        <input 
-                            type="date" 
-                            id="date_of_birth" 
-                            name="date_of_birth" 
-                            required
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            value="<?= $current_date_of_birth ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="grade" class="block text-gray-700 text-sm font-semibold mb-2">Grade</label>
-                        <select 
-                            id="grade" 
-                            name="grade" 
-                            required
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                        >
-                            <option value="" disabled <?php echo empty($current_grade) ? 'selected' : ''; ?>>Select Grade</option>
-                            <?php
-                            $grades = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-                            foreach ($grades as $grade_option) {
-                                echo "<option value='$grade_option' " . ($current_grade === $grade_option ? 'selected' : '') . ">$grade_option</option>";
-                            }
-                            ?>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="address" class="block text-gray-700 text-sm font-semibold mb-2">Address</label>
-                        <input 
-                            type="text" 
-                            id="address" 
-                            name="address" 
-                            required
-                            maxlength="255"
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                            placeholder="Enter your address"
-                            value="<?= $current_address ?>"
-                        >
-                    </div>
-                    <div>
-                        <label for="gender" class="block text-gray-700 text-sm font-semibold mb-2">Gender</label>
-                        <select 
-                            id="gender" 
-                            name="gender" 
-                            required
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                        >
-                            <option value="" disabled <?php echo empty($current_gender) ? 'selected' : ''; ?>>Select Gender</option>
-                            <option value="male" <?php echo $current_gender === 'male' ? 'selected' : ''; ?>>Male</option>
-                            <option value="female" <?php echo $current_gender === 'female' ? 'selected' : ''; ?>>Female</option>
-                            <option value="other" <?php echo $current_gender === 'other' ? 'selected' : ''; ?>>Other</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="passport_image" class="block text-gray-700 text-sm font-semibold mb-2">Passport Image</label>
-                        <input 
-                            type="file" 
-                            id="passport_image" 
-                            name="passport_image" 
-                            accept="image/*"
-                            required
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
-                        >
-                    </div>
-                <?php endif; ?>
+                </div>
 
-                <div class="flex items-center justify-between">
-                    <?php if ($current_step > 1): ?>
-                        <button 
-                            type="button"
-                            onclick="window.location.href='register.php?step=<?= $current_step - 1 ?>'"
-                            class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
-                        >
-                            Previous
-                        </button>
+                <div id="form-notification" class="absolute top-4 left-0 w-full px-4 py-3 rounded-md hidden" role="alert" style="transform: translateY(-100%);">
+                    <strong class="font-bold"></strong>
+                    <span class="block sm:inline" id="notification-message-content"></span>
+                    <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="hideNotification()">
+                        <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" class="h-6 w-6">
+                            <path d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </span>
+                </div>
+
+                <form action="register.php" method="POST" enctype="multipart/form-data" class="space-y-6">
+                    <input type="hidden" name="step" value="<?= $current_step ?>">
+
+                    <?php if ($current_step === 1): ?>
+                        <div>
+                            <label for="first_name" class="block text-gray-700 text-sm font-semibold mb-2">First Name</label>
+                            <input
+                                type="text"
+                                id="first_name"
+                                name="first_name"
+                                required
+                                maxlength="50"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your first name"
+                                value="<?= $current_first_name ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="last_name" class="block text-gray-700 text-sm font-semibold mb-2">Last Name</label>
+                            <input
+                                type="text"
+                                id="last_name"
+                                name="last_name"
+                                required
+                                maxlength="50"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your last name"
+                                value="<?= $current_last_name ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="username" class="block text-gray-700 text-sm font-semibold mb-2">Username (Optional)</label>
+                            <input
+                                type="text"
+                                id="username"
+                                name="username"
+                                maxlength="50"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Choose a username (or leave blank to auto-generate)"
+                                value="<?= $current_username ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="email" class="block text-gray-700 text-sm font-semibold mb-2">Email</label>
+                            <input
+                                type="email"
+                                id="email"
+                                name="email"
+                                required
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your email address"
+                                value="<?= $current_email ?>"
+                            >
+                        </div>
+                    <?php elseif ($current_step === 2): ?>
+                        <div>
+                            <label for="city" class="block text-gray-700 text-sm font-semibold mb-2">City</label>
+                            <input
+                                type="text"
+                                id="city"
+                                name="city"
+                                required
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your city"
+                                value="<?= $current_city ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="state" class="block text-gray-700 text-sm font-semibold mb-2">State</label>
+                            <input
+                                type="text"
+                                id="state"
+                                name="state"
+                                required
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your state"
+                                value="<?= $current_state ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="country" class="block text-gray-700 text-sm font-semibold mb-2">Country</label>
+                            <input
+                                type="text"
+                                id="country"
+                                name="country"
+                                required
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your country"
+                                value="<?= $current_country ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="school_name" class="block text-gray-700 text-sm font-semibold mb-2">School Name</label>
+                            <input
+                                type="text"
+                                id="school_name"
+                                name="school_name"
+                                required
+                                maxlength="255"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your school name"
+                                value="<?= $current_school_name ?>"
+                            >
+                        </div>
+                    <?php elseif ($current_step === 3): ?>
+                        <div>
+                            <label for="date_of_birth" class="block text-gray-700 text-sm font-semibold mb-2">Date of Birth</label>
+                            <input
+                                type="date"
+                                id="date_of_birth"
+                                name="date_of_birth"
+                                required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                value="<?= $current_date_of_birth ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="grade" class="block text-gray-700 text-sm font-semibold mb-2">Grade</label>
+                            <select
+                                id="grade"
+                                name="grade"
+                                required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                            >
+                                <option value="" disabled <?php echo empty($current_grade_value) ? 'selected' : ''; ?>>Select Grade</option>
+                                <?php
+                                $grades = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+                                foreach ($grades as $grade_option) {
+                                    // The value sent to the server will be just the number (e.g., "1", "2")
+                                    // The displayed text will be "Grade 1", "Grade 2"
+                                    echo "<option value='$grade_option' " . ($current_grade_value === $grade_option ? 'selected' : '') . ">Grade $grade_option</option>";
+                                }
+                                ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="address" class="block text-gray-700 text-sm font-semibold mb-2">Address</label>
+                            <input
+                                type="text"
+                                id="address"
+                                name="address"
+                                required
+                                maxlength="255"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                                placeholder="Enter your address"
+                                value="<?= $current_address ?>"
+                            >
+                        </div>
+                        <div>
+                            <label for="gender" class="block text-gray-700 text-sm font-semibold mb-2">Gender</label>
+                            <select
+                                id="gender"
+                                name="gender"
+                                required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                            >
+                                <option value="" disabled <?php echo empty($current_gender) ? 'selected' : ''; ?>>Select Gender</option>
+                                <option value="male" <?php echo $current_gender === 'male' ? 'selected' : ''; ?>>Male</option>
+                                <option value="female" <?php echo $current_gender === 'female' ? 'selected' : ''; ?>>Female</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="passport_image" class="block text-gray-700 text-sm font-semibold mb-2">Passport Image</label>
+                            <input
+                                type="file"
+                                id="passport_image"
+                                name="passport_image"
+                                accept="image/*"
+                                required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-navy-900 focus:border-transparent transition duration-200"
+                            >
+                            <?php if (!empty($_SESSION['reg_data']['passport_image_path'] ?? '')): ?>
+                                <p class="text-sm text-gray-500 mt-2">Current image uploaded. Upload a new one to replace it.</p>
+                            <?php endif; ?>
+                        </div>
                     <?php endif; ?>
-                    <button 
-                        type="submit"
-                        class="bg-navy-900 hover:bg-navy-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-navy-900 focus:ring-offset-2 transition duration-200"
-                    >
-                        <?= $current_step === 3 ? 'Submit' : 'Next' ?>
-                    </button>
-                    <a href="login.php" class="text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline">
-                        Already have an account? Login here.
-                    </a>
-                </div>
-            </form>
+
+                    <div class="flex items-center justify-between">
+                        <?php if ($current_step > 1): ?>
+                            <button
+                                type="button"
+                                onclick="window.location.href='register.php?step=<?= $current_step - 1 ?>'"
+                                class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition duration-200"
+                            >
+                                Previous
+                            </button>
+                        <?php endif; ?>
+                        <button
+                            type="submit"
+                            class="bg-navy-900 hover:bg-navy-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-navy-900 focus:ring-offset-2 transition duration-200"
+                        >
+                            <?= $current_step === 3 ? 'Submit' : 'Next' ?>
+                        </button>
+                        <a href="login.php" class="text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline">
+                            Already have an account? Login here.
+                        </a>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-    function displayNotification(message, type) {
-        const notificationContainer = document.getElementById('form-notification');
-        const messageContentElement = document.getElementById('notification-message-content');
-        const strongTag = notificationContainer.querySelector('strong');
+    <script>
+        function displayNotification(message, type) {
+            const notificationContainer = document.getElementById('form-notification');
+            const messageContentElement = document.getElementById('notification-message-content');
+            const strongTag = notificationContainer.querySelector('strong');
 
-        notificationContainer.classList.remove('bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700', 'bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
-        strongTag.textContent = '';
+            notificationContainer.classList.remove('bg-red-100', 'border-red-400', 'text-red-700', 'bg-green-100', 'border-green-400', 'text-green-700', 'bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
+            strongTag.textContent = '';
 
-        if (message) {
-            messageContentElement.textContent = message;
-            if (type === 'error') {
-                notificationContainer.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
-                strongTag.textContent = 'Error!';
-            } else if (type === 'success') {
-                notificationContainer.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
-                strongTag.textContent = 'Success!';
-            } else if (type === 'warning') {
-                notificationContainer.classList.add('bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
-                strongTag.textContent = 'Warning!';
+            if (message) {
+                messageContentElement.textContent = message;
+                if (type === 'error') {
+                    notificationContainer.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+                    strongTag.textContent = 'Error!';
+                } else if (type === 'success') {
+                    notificationContainer.classList.add('bg-green-100', 'border-green-400', 'text-green-700');
+                    strongTag.textContent = 'Success!';
+                } else if (type === 'warning') {
+                    notificationContainer.classList.add('bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
+                    strongTag.textContent = 'Warning!';
+                }
+                notificationContainer.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    notificationContainer.style.transition = 'transform 0.3s ease-out';
+                    notificationContainer.style.transform = 'translateY(0)';
+                });
+            } else {
+                hideNotification();
             }
-            notificationContainer.classList.remove('hidden');
-            setTimeout(() => {
-                notificationContainer.style.transition = 'transform 0.3s ease-out';
-                notificationContainer.style.transform = 'translateY(0)';
-            }, 10);
-        } else {
-            hideNotification();
         }
-    }
 
-    function hideNotification() {
-        const notificationElement = document.getElementById('form-notification');
-        notificationElement.style.transition = 'transform 0.3s ease-in';
-        notificationElement.style.transform = 'translateY(-100%)';
-        notificationElement.addEventListener('transitionend', function handler() {
-            notificationElement.classList.add('hidden');
-            notificationElement.removeEventListener('transitionend', handler);
-        });
-    }
+        function hideNotification() {
+            const notificationElement = document.getElementById('form-notification');
+            notificationElement.style.transition = 'transform 0.3s ease-in';
+            notificationElement.style.transform = 'translateY(-100%)';
+            notificationElement.addEventListener('transitionend', function handler() {
+                notificationElement.classList.add('hidden');
+                notificationElement.removeEventListener('transitionend', handler);
+                notificationElement.style.transform = 'translateY(-100%)';
+            });
+        }
 
-    <?php if (isset($_SESSION['form_message'])): ?>
-        displayNotification("<?= htmlspecialchars($_SESSION['form_message']) ?>", "<?= htmlspecialchars($_SESSION['form_message_type']) ?>");
-        <?php
-        unset($_SESSION['form_message']);
-        unset($_SESSION['form_message_type']);
-        ?>
-    <?php endif; ?>
-</script>
-
+        <?php if (isset($_SESSION['form_message'])): ?>
+            displayNotification("<?= htmlspecialchars($_SESSION['form_message']) ?>", "<?= htmlspecialchars($_SESSION['form_message_type']) ?>");
+            <?php
+            unset($_SESSION['form_message']);
+            unset($_SESSION['form_message_type']);
+            ?>
+        <?php endif; ?>
+    </script>
 </body>
 </html>
