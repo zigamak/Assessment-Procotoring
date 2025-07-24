@@ -17,6 +17,12 @@ if (!isLoggedIn() || getUserRole() !== 'admin') {
 $assessment = null;
 $quiz_id = 0;
 
+// Define all possible grades for checkboxes
+$allPossibleGrades = [
+    'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6',
+    'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'
+];
+
 // Handle form submission first if it's a POST request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit_assessment') {
     // Sanitize and validate POST data
@@ -26,7 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $max_attempts = sanitize_input($_POST['max_attempts'] ?? 0);
     $duration_minutes = !empty($_POST['duration_minutes']) ? sanitize_input($_POST['duration_minutes']) : NULL;
     $open_datetime = !empty($_POST['open_datetime']) ? sanitize_input($_POST['open_datetime']) : NULL;
-    $grade = sanitize_input($_POST['grade'] ?? NULL);
+
+    // --- MODIFICATION START: Handle multiple grades from checkboxes ---
+    $selected_grades_array = $_POST['grades'] ?? []; // Get array of selected grades
+    // Sanitize each grade in the array and then implode to a comma-separated string
+    $grade = !empty($selected_grades_array) ? implode(',', array_map('sanitize_input', $selected_grades_array)) : NULL;
+    // --- MODIFICATION END ---
+
     $is_paid = isset($_POST['is_paid']) ? 1 : 0;
     $assessment_fee = ($is_paid && !empty($_POST['assessment_fee'])) ? sanitize_input($_POST['assessment_fee']) : NULL;
 
@@ -40,7 +52,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     } elseif (empty($title)) {
         $_SESSION['form_message'] = "Assessment title is required.";
         $_SESSION['form_message_type'] = 'error';
-    } else {
+    } elseif (empty($selected_grades_array)) { // New validation for grades
+        $_SESSION['form_message'] = "At least one grade level must be selected.";
+        $_SESSION['form_message_type'] = 'error';
+    }
+    else {
         try {
             $stmt = $pdo->prepare("
                 UPDATE quizzes
@@ -56,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'max_attempts' => $max_attempts,
                 'duration_minutes' => $duration_minutes,
                 'open_datetime' => $open_datetime,
-                'grade' => $grade,
+                'grade' => $grade, // This will now be a comma-separated string
                 'is_paid' => $is_paid,
                 'assessment_fee' => $assessment_fee,
                 'quiz_id' => $quiz_id
@@ -113,6 +129,18 @@ try {
     exit;
 }
 
+// --- MODIFICATION START: Prepare current grades for checkbox pre-selection ---
+// If the form was submitted and failed validation, use the posted grades
+// Otherwise, use the grades from the database
+$current_grades_for_display = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['grades'])) {
+    $current_grades_for_display = $_POST['grades'];
+} elseif (!empty($assessment['grade'])) {
+    $current_grades_for_display = explode(',', $assessment['grade']);
+}
+// --- MODIFICATION END ---
+
+
 require_once '../includes/header_admin.php'; // Only include once at the top
 ?>
 
@@ -157,16 +185,20 @@ require_once '../includes/header_admin.php'; // Only include once at the top
                                 class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-navy-900">
                     </div>
                     
-                    <div>
-                        <label for="edit_grade" class="block text-gray-700 text-sm font-bold mb-2">Grade Level:</label>
-                        <select id="edit_grade" name="grade" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline focus:border-navy-900">
-                            <option value="">Select Grade</option>
-                            <?php for ($i = 1; $i <= 12; $i++): ?>
-                                <option value="Grade <?php echo $i; ?>" <?php echo $assessment['grade'] === "Grade $i" ? 'selected' : ''; ?>>Grade <?php echo $i; ?></option>
-                            <?php endfor; ?>
-                        </select>
+                    <div class="md:col-span-2">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Applicable Grade Level(s):</label>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                            <?php foreach ($allPossibleGrades as $gradeOption): ?>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="grades[]" value="<?php echo htmlspecialchars($gradeOption); ?>"
+                                           class="form-checkbox h-5 w-5 text-navy-900"
+                                           <?php echo in_array($gradeOption, $current_grades_for_display) ? 'checked' : ''; ?>>
+                                    <span class="ml-2 text-gray-700"><?php echo htmlspecialchars($gradeOption); ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">Select one or more grades this assessment applies to.</p>
                     </div>
-                    
                     <div>
                         <label for="edit_max_attempts" class="block text-gray-700 text-sm font-bold mb-2">Max Attempts (0 for unlimited):</label>
                         <input type="number" id="edit_max_attempts" name="max_attempts" value="<?php echo htmlspecialchars($assessment['max_attempts']); ?>" min="0" required
@@ -281,7 +313,7 @@ require_once '../includes/header_admin.php'; // Only include once at the top
             // Display session messages
             <?php if (isset($_SESSION['form_message'])): ?>
                 displayNotification("<?php echo htmlspecialchars($_SESSION['form_message']); ?>", 
-                                    "<?php echo htmlspecialchars($_SESSION['form_message_type']); ?>");
+                                     "<?php echo htmlspecialchars($_SESSION['form_message_type']); ?>");
                 <?php
                 unset($_SESSION['form_message']);
                 unset($_SESSION['form_message_type']);

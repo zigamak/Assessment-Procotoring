@@ -117,35 +117,63 @@ try {
 $max_scores_per_quiz = [];
 
 try {
-    // Fetch assessments: those with no grade (grade IS NULL or grade = '') or matching the user's grade
     $sql = "
         SELECT quiz_id, title, max_attempts, duration_minutes, open_datetime, grade, assessment_fee
         FROM quizzes
-        WHERE grade IS NULL OR grade = '' OR grade = :user_grade
+        WHERE grade IS NULL OR grade = '' OR FIND_IN_SET(:user_grade, grade) > 0
         ORDER BY created_at DESC
     ";
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['user_grade' => $user_grade]);
     $all_assessments_raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    foreach ($all_assessments_raw as $assessment) {
-        $assessment_id = $assessment['quiz_id'];
+    foreach ($all_assessments_raw as &$assessment) {
+        // Convert comma-separated grades to an array for display
+        $grade_display = 'N/A';
+        if (!empty($assessment['grade'])) {
+            $grades_array = explode(',', $assessment['grade']);
+            
+            // Sort grades numerically from lowest to highest
+            usort($grades_array, function($a, $b) {
+                // Extract numbers from "Grade X" strings
+                $num_a = (int)filter_var($a, FILTER_SANITIZE_NUMBER_INT);
+                $num_b = (int)filter_var($b, FILTER_SANITIZE_NUMBER_INT);
+                return $num_a - $num_b;
+            });
+            
+            $grade_display = implode(', ', $grades_array);
+        }
+        $assessment['grade_display'] = $grade_display;
 
-        // Get count of attempts for this assessment by this student
-        $stmt_attempts_count = $pdo->prepare("SELECT COUNT(*) FROM quiz_attempts WHERE user_id = :user_id AND quiz_id = :quiz_id");
-        $stmt_attempts_count->execute(['user_id' => $user_id, 'quiz_id' => $assessment_id]);
-        $attempts_taken = $stmt_attempts_count->fetchColumn();
+        // Check if assessment duration has expired
+        $assessment['is_expired'] = false;
+        if ($assessment['open_datetime'] && $assessment['duration_minutes']) {
+            $open_time = strtotime($assessment['open_datetime']);
+            $end_time = $open_time + ($assessment['duration_minutes'] * 60);
+            if (time() > $end_time) {
+                $assessment['is_expired'] = true;
+            }
+        }
 
-        $assessment['attempts_taken'] = $attempts_taken;
-        $assessment['is_paid'] = $paid_assessments[$assessment_id] ?? false;
-        // Ensure grade is displayed as 'N/A' if NULL or empty
-        $assessment['grade'] = empty($assessment['grade']) ? 'N/A' : $assessment['grade'];
+        // Add the 'is_paid' status to each assessment for direct access in the loop
+        // FIX: Add is_paid status to the assessment array
+        $assessment['is_paid'] = $paid_assessments[$assessment['quiz_id']] ?? false;
+
+        // Fetch the number of attempts already made by the user for this specific quiz
+        $stmt_attempts_taken = $pdo->prepare("SELECT COUNT(*) AS attempts_count FROM quiz_attempts WHERE user_id = :user_id AND quiz_id = :quiz_id");
+        $stmt_attempts_taken->execute([
+            'user_id' => $user_id,
+            'quiz_id' => $assessment['quiz_id']
+        ]);
+        $attempts_data = $stmt_attempts_taken->fetch(PDO::FETCH_ASSOC);
+        $assessment['attempts_taken'] = $attempts_data['attempts_count'] ?? 0;
 
         $all_assessments_for_display[] = $assessment;
     }
 
     // Fetch ALL previous assessment attempts by the current student
     // Also fetch max_score for each quiz for percentage calculation
+    // FIX: Populating all_previous_attempts with the fetched data
     $stmt = $pdo->prepare("
         SELECT
             qa.attempt_id,
@@ -153,16 +181,21 @@ try {
             qa.start_time,
             qa.end_time,
             qa.is_completed,
-            q.title as quiz_title,
+            q.title AS quiz_title,
             q.quiz_id,
-            (SELECT SUM(score) FROM questions WHERE quiz_id = q.quiz_id) as max_possible_score
+            (
+                SELECT SUM(score)
+                FROM questions
+                WHERE quiz_id = q.quiz_id
+            ) AS max_possible_score
         FROM quiz_attempts qa
         JOIN quizzes q ON qa.quiz_id = q.quiz_id
         WHERE qa.user_id = :user_id
         ORDER BY qa.start_time DESC
     ");
+
     $stmt->execute(['user_id' => $user_id]);
-    $all_previous_attempts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $all_previous_attempts = $stmt->fetchAll(PDO::FETCH_ASSOC); // FIX: Added this line
 
     // Populate max_scores_per_quiz for later use
     foreach ($all_previous_attempts as $attempt) {
@@ -245,7 +278,7 @@ try {
                     Verification Required!
                 </h2>
                 <p class="text-gray-700 mb-6">
-                    To access assessments and other features, please complete your profile verification by uploading a passport/ID image and providing your <strong>City, State, and Country</strong>.
+                    To access assessments and other features, please complete your profile verification by uploading a passport/ID image and providing your **City, State, and Country**.
                 </p>
                 <div class="flex justify-end space-x-4">
                     <a href="<?php echo BASE_URL; ?>student/profile.php" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-full transition duration-300 transform hover:scale-105">
@@ -256,7 +289,6 @@ try {
         </div>
         <?php endif; ?>
 
-        <!-- Quick Action Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             <div class="bg-gradient-to-r from-indigo-50 to-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
                 <div class="flex items-center justify-between">
@@ -336,10 +368,14 @@ try {
                                     <?php echo htmlspecialchars($assessment['title']); ?>
                                 </a>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade']); ?></td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['grade_display']); ?></td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><?php echo htmlspecialchars($assessment['duration_minutes'] ?: 'No Limit'); ?> mins</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <?php echo $assessment['open_datetime'] ? date('j F, Y ga', strtotime($assessment['open_datetime'])) : 'Immediate'; ?>
+                               <?php
+                                echo $assessment['open_datetime']
+                                    ? date('j F, Y g:i', strtotime($assessment['open_datetime'])) . ' ' . strtoupper(date('a', strtotime($assessment['open_datetime'])))
+                                    : 'Immediate';
+                               ?>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <?php
@@ -360,9 +396,17 @@ try {
                                     }
                                 }
 
-                                if (!$is_assessment_available) {
+                                // Check if assessment duration has expired
+                                $is_expired = $assessment['is_expired'];
+
+                                if ($is_expired) {
                                     $can_start_assessment = false;
-                                    $action_text = 'You cannot start the assessment yet';
+                                    $action_text = 'Expired';
+                                    $action_class = 'text-red-600 cursor-not-allowed text-base px-4 py-2 rounded-full';
+                                    $action_title = 'This assessment is no longer available as its duration has expired.';
+                                } elseif (!$is_assessment_available) {
+                                    $can_start_assessment = false;
+                                    $action_text = 'Not Available Yet'; // Changed for clarity
                                     $action_class = 'text-gray-400 cursor-not-allowed text-base px-4 py-2 rounded-full';
                                     $action_title = 'This assessment is not yet available. It can be started 5 minutes before the scheduled time.';
                                 } elseif (!$verification_completed) {
@@ -378,7 +422,7 @@ try {
                                     $action_title = 'Payment required to start this assessment.';
                                 } elseif ($assessment['max_attempts'] !== 0 && $assessment['attempts_taken'] >= $assessment['max_attempts']) {
                                     $can_start_assessment = false;
-                                    $action_text = 'Attempts Exhausted';
+                                    $action_text = 'Attempts Exhausted'; // Ensured this text is used
                                     $action_class = 'text-red-600 cursor-not-allowed text-base px-4 py-2 rounded-full';
                                     $action_title = 'You have used all your attempts for this assessment.';
                                 } else {
@@ -531,24 +575,28 @@ try {
             // Intercept clicks on 'Start' or 'Pay Now' if conditions are not met
             document.querySelectorAll('a[href*="take_quiz.php"], a[href*="make_payment.php"]').forEach(link => {
                 link.addEventListener('click', function(event) {
-                    const isVerificationRequiredText = event.target.textContent.includes('Verification Required');
-                    const isAttemptsExhaustedText = event.target.textContent.includes('Attempts Exhausted');
-                    const isNotAvailableText = event.target.textContent.includes('You cannot start the assessment yet');
+                    // Check if the link's text corresponds to a disabled action
+                    const actionText = event.target.textContent.trim();
+                    const titleAttribute = event.target.getAttribute('title');
 
-                    if (isVerificationRequiredText || isAttemptsExhaustedText || isNotAvailableText) {
+                    if (actionText === 'Verification Required' || 
+                        actionText === 'Attempts Exhausted' || 
+                        actionText === 'Not Available Yet' || // Updated text
+                        actionText === 'Expired') {
+                        
                         event.preventDefault();
-                        const title = event.target.getAttribute('title');
-                        if (title) {
-                            alert(title);
+                        if (titleAttribute) {
+                            alert(titleAttribute);
                         } else {
                             alert('This action is not available at this time.');
                         }
                     } else if (verificationModal && verificationModal.classList.contains('flex')) {
-                        if (event.target.href.includes('take_quiz.php')) {
+                        // This block handles cases where the modal is already visible
+                        // and the user tries to click a valid "Start" link.
+                        if (event.target.href.includes('take_quiz.php') && !<?php echo json_encode($verification_completed); ?>) {
                             event.preventDefault();
                             alert('Please complete your profile verification before starting any assessment.');
-                            verificationModal.classList.remove('hidden');
-                            verificationModal.classList.add('flex');
+                            // The modal is already visible, so no need to change its classes here
                         }
                     }
                 });

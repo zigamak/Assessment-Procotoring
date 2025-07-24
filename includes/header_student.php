@@ -60,8 +60,8 @@ if ($logged_in_user_id && isset($pdo)) { // Ensure $pdo is available from db.php
         // Check if a passport image path exists and is not empty
         if (!empty($user_details['passport_image_path'])) {
             // Construct the full URL for the uploaded image
-            // Assumes 'uploads/verification/' is directly under your BASE_URL document root
-            $user_profile_image = BASE_URL . 'uploads/verification/' . $user_details['passport_image_path'];
+            // Assumes 'uploads/passports/' is directly under your BASE_URL document root
+            $user_profile_image = BASE_URL . 'uploads/passports/' . $user_details['passport_image_path'];
         }
     }
 }

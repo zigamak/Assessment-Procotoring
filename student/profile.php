@@ -20,8 +20,8 @@ $allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
 if (!defined('BASE_DIR')) {
     define('BASE_DIR', realpath(__DIR__ . '/..'));
 }
-$upload_dir = BASE_DIR . '/uploads/verification/';
-$upload_url_path = BASE_URL . 'uploads/verification/'; // URL path for displaying images
+$upload_dir = BASE_DIR . '/uploads/passports/';
+$upload_url_path = BASE_URL . 'uploads/passports/'; // URL path for displaying images
 
 // Placeholder image URL
 $placeholder_image_url = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSQY2wp4iDIst2_iF51miozA4fRKg58TnnxCw&s';

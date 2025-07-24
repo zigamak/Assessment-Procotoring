@@ -25,7 +25,7 @@ if (!isLoggedIn() || getUserRole() !== 'admin') {
 $users = [];
 try {
     $stmt = $pdo->query("
-        SELECT user_id, first_name, last_name, email, username, auto_login_token
+        SELECT user_id, first_name, last_name, email, username, auto_login_token, auto_login_token_expiry
         FROM users
         ORDER BY last_name, first_name
     ");
@@ -43,22 +43,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
 
     try {
         // Fetch user details
-        $stmt = $pdo->prepare("SELECT username, email, auto_login_token FROM users WHERE user_id = :user_id");
+        $stmt = $pdo->prepare("SELECT username, email, auto_login_token, auto_login_token_expiry FROM users WHERE user_id = :user_id");
         $stmt->execute(['user_id' => $user_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user) {
-            // Generate new token if needed
-            $auto_login_token = $user['auto_login_token'] ?: bin2hex(random_bytes(32));
-            $stmt_update = $pdo->prepare("
-                UPDATE users
-                SET auto_login_token = :token
-                WHERE user_id = :user_id
-            ");
-            $stmt_update->execute([
-                'token' => $auto_login_token,
-                'user_id' => $user_id
-            ]);
+            // Generate new token if needed or if existing one is expired
+            $current_time = new DateTime();
+            $token_needs_generation = true;
+
+            if ($user['auto_login_token'] && $user['auto_login_token_expiry']) {
+                // Only create DateTime object if expiry is not null
+                $expiry_time = new DateTime($user['auto_login_token_expiry']);
+                if ($current_time < $expiry_time) {
+                    $token_needs_generation = false; // Token is still valid
+                }
+            }
+            
+            $auto_login_token = $user['auto_login_token'];
+            $auto_login_token_expiry = $user['auto_login_token_expiry'];
+
+            if ($token_needs_generation) {
+                $auto_login_token = bin2hex(random_bytes(32));
+                $expiry_date = new DateTime();
+                $expiry_date->modify('+2 weeks');
+                $auto_login_token_expiry = $expiry_date->format('Y-m-d H:i:s');
+
+                $stmt_update = $pdo->prepare("
+                    UPDATE users
+                    SET auto_login_token = :token, auto_login_token_expiry = :expiry
+                    WHERE user_id = :user_id
+                ");
+                $stmt_update->execute([
+                    'token' => $auto_login_token,
+                    'expiry' => $auto_login_token_expiry,
+                    'user_id' => $user_id
+                ]);
+            }
 
             $auto_login_link = BASE_URL . "auth/auto_login.php?token=" . urlencode($auto_login_token);
 
@@ -73,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
                 $email_body = str_replace('{{email}}', htmlspecialchars($user['email']), $email_body);
                 $email_body = str_replace('{{auto_login_link}}', htmlspecialchars($auto_login_link), $email_body);
                 $email_body = str_replace('{{quiz_title}}', 'Your Assessments', $email_body);
-                $email_body = str_replace('{{description}}', 'Access your Mackenny Assessment account to view and take your assessments.', $email_body);
+                $email_body = str_replace('{{description}}', 'Use the link below to access your Mackenny Assessment account. This link is valid until ' . format_datetime($auto_login_token_expiry) . '.', $email_body);
                 $email_body = str_replace('{{open_datetime}}', 'N/A', $email_body);
                 $email_body = str_replace('{{duration_minutes}}', 'N/A', $email_body);
                 $email_body = str_replace('{{grade}}', 'N/A', $email_body);
@@ -86,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
 
                 if (sendEmail($user['email'], $subject, $email_body)) {
                     error_log("Generate Auto-Login: Email sent to {$user['email']} for user_id {$user_id}");
-                    $_SESSION['form_message'] = "Auto-login link sent to {$user['email']}.";
+                    $_SESSION['form_message'] = "Auto-login link sent to {$user['email']}. It is valid until " . format_datetime($auto_login_token_expiry) . ".";
                     $_SESSION['form_message_type'] = 'success';
                 } else {
                     error_log("Generate Auto-Login: Failed to send email to {$user['email']} for user_id {$user_id}");
@@ -95,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
                 }
             } else {
                 error_log("Generate Auto-Login: Token generated for user_id {$user_id}");
-                $_SESSION['form_message'] = "Auto-login token generated for {$user['username']}. Link: " . $auto_login_link;
+                $_SESSION['form_message'] = "Auto-login token generated for {$user['username']}. Link: " . $auto_login_link . " (Valid until " . format_datetime($auto_login_token_expiry) . ")";
                 $_SESSION['form_message_type'] = 'success';
             }
         } else {
@@ -145,41 +166,61 @@ $current_page = "generate_auto_login"; // For active state in navigation
                             <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                             <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
                             <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Token Status</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry</th>
                             <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php foreach ($users as $user): ?>
+                            <?php
+                                $token_status = 'None';
+                                $expiry_display = 'N/A';
+                                if ($user['auto_login_token'] && $user['auto_login_token_expiry']) {
+                                    $expiry_time = new DateTime($user['auto_login_token_expiry']);
+                                    $current_time = new DateTime();
+                                    if ($current_time < $expiry_time) {
+                                        $token_status = 'Active';
+                                        $expiry_display = format_datetime($user['auto_login_token_expiry']);
+                                    } else {
+                                        $token_status = 'Expired';
+                                        $expiry_display = format_datetime($user['auto_login_token_expiry']) . ' (Expired)';
+                                    }
+                                }
+                            ?>
                             <tr class="hover:bg-gray-50 transition duration-200">
                                 <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($user['first_name'] . ' ' . $user['last_name']); ?></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($user['email']); ?></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-gray-900"><?php echo htmlspecialchars($user['username']); ?></td>
                                 <td class="px-4 py-4 whitespace-nowrap text-gray-900">
-                                    <?php echo $user['auto_login_token'] ? 'Active' : 'None'; ?>
+                                    <?php echo $token_status; ?>
+                                </td>
+                                <td class="px-4 py-4 whitespace-nowrap text-gray-900">
+                                    <?php echo $expiry_display; ?>
                                 </td>
                                 <td class="px-4 py-4 whitespace-nowrap text-right">
                                     <div class="relative inline-block text-left">
                                         <div>
                                             <button type="button" class="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-gray-600 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-gray-500" id="options-menu-<?php echo $user['user_id']; ?>" aria-haspopup="true" aria-expanded="true" onclick="toggleDropdown(<?php echo $user['user_id']; ?>)">
+                                                Actions
                                                 <svg class="-mr-1 ml-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                                                 </svg>
                                             </button>
                                         </div>
 
                                         <div class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 hidden" id="dropdown-menu-<?php echo $user['user_id']; ?>" role="menu" aria-orientation="vertical" aria-labelledby="options-menu-<?php echo $user['user_id']; ?>">
                                             <div class="py-1" role="none">
-                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Generate auto-login token for <?php echo htmlspecialchars($user['username']); ?>?');">
+                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Generate new auto-login token for <?php echo htmlspecialchars($user['username']); ?>? This will invalidate any existing token.');">
                                                     <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
                                                     <input type="hidden" name="action" value="generate">
                                                     <button type="submit" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100" role="menuitem">
-                                                        Generate Token
+                                                        Generate New Token
                                                     </button>
                                                 </form>
-                                                <button type="button" onclick="copyAutoLoginLink(<?php echo htmlspecialchars($user['user_id']); ?>, '<?php echo BASE_URL . "auth/auto_login.php?token=" . urlencode($user['auto_login_token']); ?>')" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 <?php echo empty($user['auto_login_token']) ? 'opacity-50 cursor-not-allowed' : ''; ?>" role="menuitem" <?php echo empty($user['auto_login_token']) ? 'disabled' : ''; ?>>
+                                                <button type="button" onclick="copyAutoLoginLink(<?php echo htmlspecialchars($user['user_id']); ?>, '<?php echo BASE_URL . "auth/auto_login.php?token=" . urlencode($user['auto_login_token']); ?>')" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 <?php echo empty($user['auto_login_token']) || $token_status === 'Expired' ? 'opacity-50 cursor-not-allowed' : ''; ?>" role="menuitem" <?php echo empty($user['auto_login_token']) || $token_status === 'Expired' ? 'disabled' : ''; ?>>
                                                     Copy Link
                                                 </button>
-                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Send auto-login link to <?php echo htmlspecialchars($user['email']); ?>?');">
+                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Send auto-login link to <?php echo htmlspecialchars($user['email']); ?>? A new token will be generated if the current one is expired or non-existent.');">
                                                     <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
                                                     <input type="hidden" name="action" value="send">
                                                     <button type="submit" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100" role="menuitem">
@@ -251,7 +292,7 @@ $current_page = "generate_auto_login"; // For active state in navigation
         closeAllDropdowns();
 
         if (!link || link.includes("null") || link.includes("undefined") || link.endsWith("token=")) {
-            displayNotification("No auto-login token exists for this user. Please generate one first.", "warning");
+            displayNotification("No auto-login token exists for this user or it's invalid. Please generate a new one first.", "warning");
             return;
         }
 
@@ -288,12 +329,18 @@ $current_page = "generate_auto_login"; // For active state in navigation
             if (button.contains(event.target)) {
                 clickedOnDropdown = true;
             }
+            // Also check if the click is inside any dropdown menu itself
+            const dropdownMenu = button.parentNode.querySelector('[id^="dropdown-menu-"]');
+            if (dropdownMenu && dropdownMenu.contains(event.target)) {
+                clickedOnDropdown = true;
+            }
         });
 
         if (!clickedOnDropdown) {
             closeAllDropdowns();
         }
     });
+
 
     function closeAllDropdowns() {
         const allDropdowns = document.querySelectorAll('[id^="dropdown-menu-"]');

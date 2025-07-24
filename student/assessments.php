@@ -106,28 +106,6 @@ if ($view_attempt_id) {
 
         if ($current_attempt) {
             $current_attempt['percentage_score'] = $current_attempt['is_completed'] ? calculate_percentage($current_attempt['score'], $current_attempt['max_possible_score']) : 'N/A';
-            try {
-                $stmt_answers = $pdo->prepare("
-                    SELECT
-                        a.answer_id, a.answer_text, a.is_correct,
-                        qs.question_id, qs.question_text, qs.question_type, qs.score as question_score,
-                        o.option_text as selected_option_text,
-                        GROUP_CONCAT(DISTINCT CONCAT(opt.option_text, '||', opt.is_correct) SEPARATOR ';;') as correct_options_data
-                    FROM answers a
-                    JOIN questions qs ON a.question_id = qs.question_id
-                    LEFT JOIN options o ON a.selected_option_id = o.option_id
-                    LEFT JOIN options opt ON qs.question_id = opt.question_id AND opt.is_correct = TRUE
-                    WHERE a.attempt_id = :attempt_id
-                    GROUP BY a.answer_id, a.answer_text, a.is_correct, qs.question_id, qs.question_text, qs.question_type, qs.score, o.option_text
-                    ORDER BY qs.question_id ASC
-                ");
-                $stmt_answers->execute(['attempt_id' => $view_attempt_id]);
-                $current_attempt['answers'] = $stmt_answers->fetchAll(PDO::FETCH_ASSOC);
-            } catch (PDOException $e) {
-                error_log("Student View History (Answers) Error: " . $e->getMessage());
-                $message .= display_message("An error occurred while fetching answers for this attempt.", "warning");
-                $current_attempt['answers'] = [];
-            }
         } else {
             $message = display_message("Attempt not found or you do not have permission to view it.", "error");
             $view_attempt_id = null;
@@ -223,54 +201,17 @@ if (!$view_attempt_id) {
                     <p><strong>Completed:</strong> <?php echo $current_attempt['end_time'] ? date('g:i A, F j, Y', strtotime($current_attempt['end_time'])) : 'N/A'; ?></p>
                     <p><strong>Status:</strong> <?php echo $current_attempt['is_completed'] ? 'Completed' : 'Cancelled'; ?></p>
                     <p><strong>Overall Score:</strong> <?php echo htmlspecialchars(sprintf('%.2f', $current_attempt['score'] ?? 0)); ?> / <?php echo htmlspecialchars($current_attempt['max_possible_score'] ?? 0); ?></p>
+                    <p><strong>Score Percentage:</strong> 
+                        <span class="<?php echo ($current_attempt['percentage_score'] !== 'N/A' && $current_attempt['percentage_score'] >= 70) ? 'text-green-600 font-bold' : 'text-red-600 font-bold'; ?>">
+                            <?php echo htmlspecialchars($current_attempt['percentage_score']); ?>%
+                        </span>
+                    </p>
                 </div>
-                <div class="mt-8 text-center">
-                    <button id="toggleAnswersButton" class="inline-block w-full bg-purple-600 text-white px-6 py-3 rounded-full hover:bg-purple-700 transition duration-300">
-                        <i class="fas fa-eye mr-2"></i> View Questions & Answers
-                    </button>
+                <div class="mt-6 text-center">
+                    <a href="assessments.php" class="inline-block bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition duration-300">
+                        <i class="fas fa-arrow-left mr-2"></i> Back to All Attempts
+                    </a>
                 </div>
-            </div>
-        </div>
-
-        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-            <div id="questionsAnswersSection" class="hidden">
-                <h3 class="text-xl font-semibold text-gray-700 mb-3">Questions and Your Answers</h3>
-                <?php if (!empty($current_attempt['answers'])): ?>
-                    <?php foreach ($current_attempt['answers'] as $answer): ?>
-                        <div class="border p-4 rounded-md bg-gray-50 mb-4">
-                            <p class="font-semibold text-gray-800">Q: <?php echo htmlspecialchars($answer['question_text']); ?> (Points: <?php echo htmlspecialchars($answer['question_score']); ?>)</p>
-                            <p class="text-sm text-gray-600">Type: <?php echo htmlspecialchars(ucfirst(str_replace('_', ' ', $answer['question_type']))); ?></p>
-                            <?php if ($answer['question_type'] === 'multiple_choice'): ?>
-                                <p><strong>Your Selected Option:</strong> <?php echo htmlspecialchars($answer['selected_option_text'] ?? 'No answer'); ?></p>
-                                <?php
-                                    $correct_options_parsed = [];
-                                    if (!empty($answer['correct_options_data'])) {
-                                        $options_raw = explode(';;', $answer['correct_options_data']);
-                                        foreach ($options_raw as $opt_str) {
-                                            if (strpos($opt_str, '||') !== false) {
-                                                list($opt_text, $is_correct_val) = explode('||', $opt_str, 2);
-                                                if ((bool)$is_correct_val) {
-                                                    $correct_options_parsed[] = $opt_text;
-                                                }
-                                            }
-                                        }
-                                    }
-                                ?>
-                                <p><strong>Correct Answer(s):</strong> <?php echo !empty($correct_options_parsed) ? htmlspecialchars(implode(', ', $correct_options_parsed)) : 'N/A'; ?></p>
-                                <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
-                            <?php elseif ($answer['question_type'] === 'true_false' || $answer['question_type'] === 'short_answer'): ?>
-                                <p><strong>Your Answer:</strong> <?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></p>
-                                <p><strong>Result:</strong> <span class="<?php echo $answer['is_correct'] ? 'text-green-600' : 'text-red-600'; ?>"><?php echo $answer['is_correct'] ? 'Correct' : 'Incorrect'; ?></span></p>
-                            <?php elseif ($answer['question_type'] === 'essay'): ?>
-                                <p><strong>Your Answer:</strong></p>
-                                <div class="bg-gray-100 p-3 rounded-md border text-gray-700 whitespace-pre-wrap"><?php echo htmlspecialchars($answer['answer_text'] ?? 'No answer'); ?></div>
-                                <p class="text-sm text-gray-600 mt-2"><em>This question requires manual grading by an administrator.</em></p>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p class="text-gray-600">No answers recorded for this attempt yet, or there was an issue retrieving them.</p>
-                <?php endif; ?>
             </div>
         </div>
 
@@ -294,18 +235,18 @@ if (!$view_attempt_id) {
                         "Spectacular job! You're among the best of the best!"
                     ],
                     great: [
-                        "Great job! You’re smashing it!",
+                        "Great job! You're smashing it!",
                         "Outstanding! You nailed it.",
                         "Top marks! Keep it up.",
                         "Brilliant work! You're on fire.",
-                        "You’ve done really well—keep going!"
+                        "You've done really well—keep going!"
                     ],
                     good: [
                         "Good effort! A bit more polish and you'll ace it.",
                         "Nice work, but you can push further.",
                         "Almost there! Keep at it.",
                         "Solid try! Now aim higher.",
-                        "You’ve got potential—just a little more effort!"
+                        "You've got potential—just a little more effort!"
                     ],
                     improving: [
                         "You're getting there! A bit more practice will boost your score!",
@@ -340,14 +281,13 @@ if (!$view_attempt_id) {
                     } else if (score >= 50) {
                         messages = feedbackMessages.improving;
                         status = 'Needs Improvement';
-                        percentile = null; // No percentile for <70%
+                        percentile = null;
                     } else {
                         messages = feedbackMessages.needsWork;
                         status = 'Needs Improvement';
-                        percentile = null; // No percentile for <70%
+                        percentile = null;
                     }
                     const message = messages[Math.floor(Math.random() * messages.length)];
-                    // 50% chance to include percentile message for scores >= 70%
                     const showPercentile = score >= 70 && Math.random() < 0.5;
                     const finalMessage = showPercentile && percentile ? `${message} You scored higher than ${percentile}% of participants.` : message;
                     return { status, message: finalMessage };
@@ -384,15 +324,6 @@ if (!$view_attempt_id) {
                     resultStatusElement.textContent = 'Not Completed';
                     resultFeedbackElement.textContent = 'This assessment was not completed.';
                 }
-
-                const toggleButton = document.getElementById('toggleAnswersButton');
-                const questionsAnswersSection = document.getElementById('questionsAnswersSection');
-                toggleButton.addEventListener('click', function() {
-                    questionsAnswersSection.classList.toggle('hidden');
-                    toggleButton.innerHTML = questionsAnswersSection.classList.contains('hidden')
-                        ? '<i class="fas fa-eye mr-2"></i> View Questions & Answers'
-                        : '<i class="fas fa-eye-slash mr-2"></i> Hide Questions & Answers';
-                });
             });
         </script>
 

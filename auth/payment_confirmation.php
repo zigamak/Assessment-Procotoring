@@ -1,6 +1,6 @@
 <?php
 // auth/payment_confirmation.php
-// Displays confirmation after successful payment and allows resending the confirmation email.
+// Displays confirmation after successful payment and automatically sends comprehensive confirmation email.
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);
@@ -38,9 +38,13 @@ if (empty($reference) || empty($quiz_id)) {
 // Verify payment and user details
 $payment = null;
 $quiz_title_display = 'Unknown Assessment';
+$auto_login_link = null; // Initialize auto_login_link
+
 try {
     $stmt = $pdo->prepare("
-        SELECT p.user_id, p.amount, p.status, p.payment_date, p.email_sent, u.email, u.username, q.title as quiz_title
+        SELECT p.user_id, p.amount, p.status, p.payment_date, p.email_sent,
+               u.email, u.username, u.first_name, u.last_name, -- Fetch first_name and last_name
+               q.title as quiz_title
         FROM payments p
         JOIN users u ON p.user_id = u.user_id
         JOIN quizzes q ON p.quiz_id = q.quiz_id
@@ -59,61 +63,111 @@ try {
     }
 
     $quiz_title_display = htmlspecialchars($payment['quiz_title']);
+
+    // Generate and store auto-login token if user is not already logged in
+    // or if the existing token is expired/invalid.
+    // Fetch current token details
+    $stmt_fetch_token = $pdo->prepare("SELECT auto_login_token, auto_login_token_expiry FROM users WHERE user_id = :user_id");
+    $stmt_fetch_token->execute(['user_id' => $payment['user_id']]);
+    $user_token_data = $stmt_fetch_token->fetch(PDO::FETCH_ASSOC);
+
+    $current_time = new DateTime();
+    $token_is_valid = false;
+    if ($user_token_data && $user_token_data['auto_login_token'] && $user_token_data['auto_login_token_expiry']) {
+        try {
+            $expiry_time = new DateTime($user_token_data['auto_login_token_expiry']);
+            if ($current_time < $expiry_time) {
+                $auto_login_link = BASE_URL . 'auth/auto_login.php?token=' . $user_token_data['auto_login_token'];
+                $token_is_valid = true;
+            }
+        } catch (Exception $e) {
+            // Log error if date parsing fails, treat token as invalid
+            error_log("Payment Confirmation: Invalid auto_login_token_expiry format for user_id {$payment['user_id']}: " . $user_token_data['auto_login_token_expiry']);
+        }
+    }
+
+    // If no valid token exists, generate a new one
+    if (!$token_is_valid) {
+        $auto_login_token_new = bin2hex(random_bytes(32)); // Generate a random 64-character hex token
+        $expiry_time_new = (new DateTime())->modify('+24 hours')->format('Y-m-d H:i:s'); // Token valid for 24 hours
+
+        $stmt_update_token = $pdo->prepare("
+            UPDATE users SET auto_login_token = :token, auto_login_token_expiry = :expiry WHERE user_id = :user_id
+        ");
+        $stmt_update_token->execute([
+            'token' => $auto_login_token_new,
+            'expiry' => $expiry_time_new,
+            'user_id' => $payment['user_id']
+        ]);
+        $auto_login_link = BASE_URL . 'auth/auto_login.php?token=' . $auto_login_token_new;
+        error_log("Payment Confirmation: Generated NEW auto-login token for user_id {$payment['user_id']}. Link: {$auto_login_link}");
+    } else {
+        error_log("Payment Confirmation: Reusing existing valid auto-login token for user_id {$payment['user_id']}. Link: {$auto_login_link}");
+    }
+
+    // --- Start: Automatic Email Sending Logic (only if email_sent is 0) ---
+    if ($payment['email_sent'] == 0) {
+        try {
+            ob_start();
+            require '../includes/email_templates/payment_confirmation_email.php';
+            $email_body = ob_get_clean();
+
+            // Replace placeholders in the email body
+            $email_body = str_replace('{{first_name}}', htmlspecialchars($payment['first_name']), $email_body); // New
+            $email_body = str_replace('{{last_name}}', htmlspecialchars($payment['last_name']), $email_body);   // New
+            $email_body = str_replace('{{email}}', htmlspecialchars($payment['email']), $email_body);
+            $email_body = str_replace('{{auto_login_link}}', htmlspecialchars($auto_login_link), $email_body);
+            $email_body = str_replace('{{quiz_title}}', $quiz_title_display, $email_body);
+            $email_body = str_replace('{{amount}}', number_format($payment['amount'], 2), $email_body);
+            $email_body = str_replace('{{transaction_reference}}', htmlspecialchars($reference), $email_body);
+            // Format payment date as "June 2, 2025, 2:40 am"
+            $email_body = str_replace('{{payment_date}}', date('F j, Y, g:i a', strtotime($payment['payment_date'])), $email_body);
+
+            $subject = "Your Mackenny Assessment Payment Confirmation & Login Access";
+
+            if (sendEmail($payment['email'], $subject, $email_body)) {
+                $stmt_update_email_sent = $pdo->prepare("
+                    UPDATE payments
+                    SET email_sent = 1
+                    WHERE transaction_reference = :reference AND quiz_id = :quiz_id
+                ");
+                $stmt_update_email_sent->execute([
+                    'reference' => $reference,
+                    'quiz_id' => $quiz_id
+                ]);
+                error_log("Payment Confirmation: Comprehensive confirmation email sent successfully to {$payment['email']} for ref {$reference}");
+                $_SESSION['form_message'] = "Payment confirmed. A detailed confirmation email has been sent.";
+                $_SESSION['form_message_type'] = 'success';
+            } else {
+                error_log("Payment Confirmation: Failed to send comprehensive confirmation email to {$payment['email']} for ref {$reference}");
+                $_SESSION['form_message'] = "Payment confirmed, but failed to send the detailed confirmation email. Please contact support.";
+                $_SESSION['form_message_type'] = 'error';
+            }
+        } catch (PDOException $e) {
+            error_log("Payment Confirmation: Email Send DB Error: SQLSTATE[{$e->getCode()}]: " . $e->getMessage());
+            $_SESSION['form_message'] = "An error occurred while sending the confirmation email. Please contact support.";
+            $_SESSION['form_message_type'] = 'error';
+        } catch (Exception $e) {
+            error_log("Payment Confirmation: General Error during email send: " . $e->getMessage());
+            $_SESSION['form_message'] = "An unexpected error occurred during email send. Please contact support.";
+            $_SESSION['form_message_type'] = 'error';
+        }
+    } else {
+        error_log("Payment Confirmation: Email already sent for ref {$reference}. Skipping send.");
+        // If email was already sent, we can still show a success message if needed,
+        // but avoid re-setting it if a previous error message is more relevant.
+        if (!isset($_SESSION['form_message'])) {
+             $_SESSION['form_message'] = "Payment confirmed. The detailed confirmation email was already sent.";
+             $_SESSION['form_message_type'] = 'info';
+        }
+    }
+    // --- End: Automatic Email Sending Logic ---
+
 } catch (PDOException $e) {
-    error_log("Payment Confirmation: DB Error fetching payment: SQLSTATE[{$e->getCode()}]: " . $e->getMessage());
+    error_log("Payment Confirmation: DB Error fetching payment or updating token: SQLSTATE[{$e->getCode()}]: " . $e->getMessage());
     $_SESSION['form_message'] = "An error occurred while verifying your payment. Please try again or contact support.";
     $_SESSION['form_message_type'] = 'error';
     redirect(BASE_URL . 'auth/payment.php?quiz_id=' . urlencode($quiz_id) . '&amount=0');
-    exit();
-}
-
-// Handle resend confirmation email request
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_link'])) {
-    try {
-        // No auto-login token generation or update needed
-        // The existing email template is assumed to be updated externally to reflect the new messaging.
-        ob_start();
-        // The content of this file is assumed to be updated to match the new email messaging.
-        // For example, payment_confirmation_email_no_login.php or similar.
-        // For this example, we'll keep the name as payment_confirmation_email.php but assume its content is adjusted.
-        require '../includes/email_templates/payment_confirmation_email.php';
-        $email_body = ob_get_clean();
-
-        $email_body = str_replace('{{username}}', htmlspecialchars($payment['username']), $email_body);
-        $email_body = str_replace('{{email}}', htmlspecialchars($payment['email']), $email_body);
-        // Removed auto_login_link replacement
-        $email_body = str_replace('{{quiz_title}}', $quiz_title_display, $email_body);
-        $email_body = str_replace('{{amount}}', number_format($payment['amount'], 2), $email_body);
-        $email_body = str_replace('{{transaction_reference}}', htmlspecialchars($reference), $email_body);
-        $email_body = str_replace('{{payment_date}}', date('F j, Y, g:i a', strtotime($payment['payment_date'])), $email_body);
-
-        $subject = "Your Mackenny Assessment Payment Confirmation"; // Updated subject
-
-        if (sendEmail($payment['email'], $subject, $email_body)) {
-            $stmt_update_email_sent = $pdo->prepare("
-                UPDATE payments
-                SET email_sent = 1
-                WHERE transaction_reference = :reference AND quiz_id = :quiz_id
-            ");
-            $stmt_update_email_sent->execute([
-                'reference' => $reference,
-                'quiz_id' => $quiz_id
-            ]);
-            error_log("Payment Confirmation: Confirmation email resent successfully to {$payment['email']} for ref {$reference}");
-            $_SESSION['form_message'] = "Payment confirmation email resent to your email address.";
-            $_SESSION['form_message_type'] = 'success';
-        } else {
-            error_log("Payment Confirmation: Failed to resend confirmation email to {$payment['email']} for ref {$reference}");
-            $_SESSION['form_message'] = "Failed to resend the payment confirmation email. Please try again or contact support.";
-            $_SESSION['form_message_type'] = 'error';
-        }
-    } catch (PDOException $e) {
-        error_log("Payment Confirmation: Resend Email Error: SQLSTATE[{$e->getCode()}]: " . $e->getMessage());
-        $_SESSION['form_message'] = "An error occurred while resending the confirmation email. Please try again or contact support.";
-        $_SESSION['form_message_type'] = 'error';
-    }
-
-    redirect(BASE_URL . 'auth/payment_confirmation.php?reference=' . urlencode($reference) . '&quiz_id=' . urlencode($quiz_id));
     exit();
 }
 ?>
@@ -138,11 +192,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_link'])) {
             <div class="bg-navy-900 text-white p-12 flex flex-col justify-center">
                 <h1 class="text-4xl font-bold mb-4">Payment Successful!</h1>
                 <p class="text-lg mb-6">
-                    Thank you for your payment. A confirmation email has been sent to <strong><?php echo htmlspecialchars($payment['email']); ?></strong>.
-                    You will receive a separate email with your login details and instructions to access your dashboard and assessment a few days before your scheduled assessment date.
+                    Thank you for your payment. A confirmation email with your login details has been sent to <strong><?php echo htmlspecialchars($payment['email']); ?></strong>.
+                    You can log in instantly to your dashboard using the button below.
                 </p>
-                <p class="text-sm italic">
-                    Check your inbox (and spam/junk folder) for the confirmation email. If you don’t receive it, you can resend it below.
+                <p class="text-md italic">
+                    Check your inbox (and spam/junk folder) for the confirmation email. You will receive a separate email with your full assessment schedule and details a few days before your scheduled assessment date.
                 </p>
             </div>
             <div class="p-12 relative">
@@ -168,15 +222,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_link'])) {
                     </p>
                 </div>
 
-                <form action="payment_confirmation.php?reference=<?php echo urlencode($reference); ?>&quiz_id=<?php echo urlencode($quiz_id); ?>" method="POST" class="space-y-6">
+                <div class="space-y-6">
                     <div>
                         <p class="text-gray-600 mb-4">
-                            Didn’t receive the payment confirmation email? Click below to resend it to <strong><?php echo htmlspecialchars($payment['email']); ?></strong>.
+                            Click the button below to go to your dashboard and get started with your assessment.
                         </p>
-                        <button type="submit" name="resend_link" value="1"
-                                class="bg-navy-900 hover:bg-navy-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-navy-900 focus:ring-offset-2 transition duration-200">
-                            Resend Confirmation Email
-                        </button>
+                        <?php if ($auto_login_link): ?>
+                            <a href="<?php echo htmlspecialchars($auto_login_link); ?>"
+                               class="bg-navy-900 hover:bg-navy-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-navy-900 focus:ring-offset-2 transition duration-200">
+                                Go to My Dashboard
+                            </a>
+                        <?php endif; ?>
                     </div>
                     <div class="text-center mt-6 space-y-4">
                         <p class="text-sm text-gray-600">
@@ -186,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend_link'])) {
                             </a>.
                         </p>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>

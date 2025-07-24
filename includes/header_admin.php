@@ -47,11 +47,10 @@ if ($logged_in_user_id && isset($pdo)) { // Ensure $pdo is available from db.php
         }
 
         if (!empty($user_details['passport_image_path'])) {
-            $user_profile_image = BASE_URL . 'uploads/admin_profiles/' . $user_details['passport_image_path'];
+            $user_profile_image = BASE_URL . 'Uploads/admin_profiles/' . $user_details['passport_image_path'];
         }
     }
 }
-
 
 // Define the theme colors for consistent styling
 $sidebar_bg_color = "#1a202c"; // Darker shade for admin sidebar
@@ -60,7 +59,6 @@ $hover_color_sidebar = "#2d3748"; // Slightly lighter charcoal for hover
 $accent_color = "#4299e1"; // Changed from #e53e3e to match student's accent color
 $header_bg_color = "#ffffff"; // White for the main header
 $body_bg_color = "#f7fafc"; // Light gray background for the main content area
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -71,9 +69,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -86,7 +82,6 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
         .bg-accent { background-color: <?php echo $accent_color; ?>; }
         .text-accent { color: <?php echo $accent_color; ?>; }
         .bg-header { background-color: <?php echo $header_bg_color; ?>; }
-
         /* Select2 specific styling adjustments to match Tailwind forms */
         .select2-container .select2-selection--single {
             height: 38px !important; /* Tailwind's form-input height */
@@ -121,7 +116,6 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
             border-color: <?php echo $accent_color; ?> !important; /* Focus ring color */
             box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5) !important; /* focus:ring-opacity-50 */
         }
-
         /* Custom scrollbar for sidebar */
         .sidebar::-webkit-scrollbar {
             width: 8px;
@@ -140,7 +134,8 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
     <aside class="w-64 bg-sidebar text-sidebar-light shadow-lg flex flex-col fixed inset-y-0 left-0 z-40">
         <div class="p-6 text-3xl font-bold border-b border-gray-700 flex items-center justify-center">
             <a href="<?php echo BASE_URL; ?>admin/dashboard.php" class="hover:opacity-80 transition duration-300">
-                <img src="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png" alt="Mackenny Tutors Logo" class="h-10"> </a>
+                <img src="https://mackennytutors.com/wp-content/uploads/2025/05/Mackenny.png" alt="Mackenny Tutors Logo" class="h-10">
+            </a>
         </div>
         <nav class="flex-grow p-4 overflow-y-auto sidebar">
             <ul class="space-y-2">
@@ -158,7 +153,6 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                         <i class="fas fa-fw fa-file-alt mr-3"></i> Assessments
                     </a>
                 </li>
-
                 <li>
                     <a href="<?php echo BASE_URL; ?>admin/users.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
@@ -166,6 +160,7 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                         <i class="fas fa-fw fa-users mr-3"></i> Users
                     </a>
                 </li>
+           
                 <li>
                     <a href="<?php echo BASE_URL; ?>admin/results.php"
                        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
@@ -187,13 +182,13 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                         <i class="fas fa-fw fa-cog mr-3"></i> Settings
                     </a>
                 </li>
-              <li>
-    <a href="<?php echo BASE_URL; ?>admin/generate_auto_login.php"
-        class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
-        <?php echo (basename($_SERVER['PHP_SELF']) == 'generate_auto_login.php.php') ? 'bg-accent text-white' : ''; ?>">
-        <i class="fas fa-fw fa-key mr-3"></i> Generate Login Tokens
-    </a>
-</li>
+                <li>
+                    <a href="<?php echo BASE_URL; ?>admin/generate_auto_login.php"
+                       class="flex items-center p-3 rounded-md hover:bg-sidebar-hover transition duration-300
+                       <?php echo (basename($_SERVER['PHP_SELF']) == 'generate_auto_login.php') ? 'bg-accent text-white' : ''; ?>">
+                        <i class="fas fa-fw fa-key mr-3"></i> Generate Login Tokens
+                    </a>
+                </li>
             </ul>
         </nav>
         <div class="p-4 border-t border-gray-700 text-sm">
@@ -273,12 +268,6 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                         logoutModal.classList.remove('hidden');
                     }
 
-                    // Function to hide the modal
-                    function hideLogoutConfirmModal() {
-                        logoutModal.classList.add('hidden');
-                        // logoutRedirectUrl = ''; // DO NOT CLEAR HERE, it would prevent redirect if called before redirect
-                    }
-
                     // Attach event listeners to logout links
                     document.getElementById('sidebarLogoutLink').addEventListener('click', showLogoutConfirmModal);
                     document.getElementById('dropdownLogoutLink').addEventListener('click', showLogoutConfirmModal);
@@ -307,6 +296,9 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     });
                     // --- End Custom Logout Confirmation Modal Logic ---
 
+                    function hideLogoutConfirmModal() {
+                        logoutModal.classList.add('hidden');
+                    }
                 }); // End of document.ready
             </script>
 
@@ -327,4 +319,3 @@ $body_bg_color = "#f7fafc"; // Light gray background for the main content area
                     </div>
                 </div>
             </div>
-         

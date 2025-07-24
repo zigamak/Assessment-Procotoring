@@ -25,7 +25,7 @@ if (isset($current_attempt['user_id']) && isset($pdo)) {
         if ($user_data_result) {
             // Update profile image using passport_image_path from the users table
             if (!empty($user_data_result['passport_image_path'])) {
-                $user_profile_image_for_display = BASE_URL . 'uploads/verification/' . $user_data_result['passport_image_path'];
+                $user_profile_image_for_display = BASE_URL . 'uploads/passports/' . $user_data_result['passport_image_path'];
             }
             // Update full name, preferring first_name and last_name if available
             $first_name = htmlspecialchars($user_data_result['first_name'] ?? '');
