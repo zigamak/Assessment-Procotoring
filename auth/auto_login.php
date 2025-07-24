@@ -1,6 +1,6 @@
 <?php
 // auth/auto_login.php
-// Handles multi-use login links that expire.
+// Handles multi-use login links that expire, using auto_login_tokens table.
 
 // Enable error reporting for debugging - REMOVE IN PRODUCTION
 error_reporting(E_ALL);
@@ -8,94 +8,82 @@ ini_set('display_errors', 1);
 
 require_once '../includes/session.php';
 require_once '../includes/db.php';
-require_once '../includes/functions.php'; // For sanitize_input(), redirect(), BASE_URL, format_datetime (if used for messages)
+require_once '../includes/functions.php'; // For sanitize_input(), redirect(), BASE_URL
 
 // Set timezone to Africa/Lagos (WAT, UTC+1) for consistency
 date_default_timezone_set('Africa/Lagos');
-
 
 if (isset($_GET['token']) && !empty($_GET['token'])) {
     $token = sanitize_input($_GET['token']);
 
     try {
-        // Find the user with the given token AND its expiry.
-        // We now select auto_login_token_expiry to check its validity.
-        $stmt = $pdo->prepare("SELECT user_id, username, role, auto_login_token_expiry FROM users WHERE auto_login_token = :token");
+        // Find the token in auto_login_tokens
+        $stmt = $pdo->prepare("
+            SELECT alt.user_id, alt.expires_at, alt.used, u.username, u.role
+            FROM auto_login_tokens alt
+            JOIN users u ON alt.user_id = u.user_id
+            WHERE alt.token = :token
+        ");
         $stmt->execute(['token' => $token]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        $token_record = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user) {
+        if ($token_record) {
             $current_time = new DateTime();
+            $expiry_time = new DateTime($token_record['expires_at']);
 
-            // Check if auto_login_token_expiry is not null and is a valid date string
-            if ($user['auto_login_token_expiry'] !== null) {
-                $expiry_time = new DateTime($user['auto_login_token_expiry']);
+            if ($current_time < $expiry_time && !$token_record['used']) {
+                // Token is valid and not used - Log the user in
+                $_SESSION['user_id'] = $token_record['user_id'];
+                $_SESSION['username'] = $token_record['username'];
+                $_SESSION['role'] = $token_record['role'];
+                $_SESSION['loggedin'] = true;
 
-                if ($current_time < $expiry_time) {
-                    // Token is valid and not expired - Log the user in
+                // Optionally mark token as used (uncomment if single-use tokens are desired)
+                /*
+                $update_stmt = $pdo->prepare("UPDATE auto_login_tokens SET used = 1 WHERE token = :token");
+                $update_stmt->execute(['token' => $token]);
+                */
 
-                    $_SESSION['user_id'] = $user['user_id'];
-                    $_SESSION['username'] = $user['username'];
-                    $_SESSION['role'] = $user['role'];
-                    $_SESSION['loggedin'] = true; // Set a flag indicating user is logged in
+                // Update last login timestamp
+                $update_last_login_stmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE user_id = :user_id");
+                $update_last_login_stmt->execute(['user_id' => $token_record['user_id']]);
 
-                    // *** IMPORTANT CHANGE: DO NOT INVALIDATE THE TOKEN HERE! ***
-                    // Removing the update statement that sets auto_login_token to NULL.
-                    // The token will remain active until its expiry date.
-
-                    // Optional: Update last login timestamp for the user
-                    $update_last_login_stmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE user_id = :user_id");
-                    $update_last_login_stmt->execute(['user_id' => $user['user_id']]);
-
-                    // Redirect to their dashboard based on role or a default page
-                    if ($user['role'] === 'admin') {
-                        redirect(BASE_URL . 'admin/dashboard.php');
-                    } else {
-                        // Default for 'student' or other roles
-                        redirect(BASE_URL . 'student/dashboard.php');
-                    }
-                    exit; // Ensure script terminates after redirect
-
+                // Redirect based on role
+                if ($token_record['role'] === 'admin') {
+                    redirect(BASE_URL . 'admin/dashboard.php');
                 } else {
-                    // Token has expired - Invalidate the token in the database
-                    $_SESSION['form_message'] = "Your auto-login link has expired. Please request a new one.";
-                    $_SESSION['form_message_type'] = 'error';
-
-                    $update_stmt = $pdo->prepare("UPDATE users SET auto_login_token = NULL, auto_login_token_expiry = NULL WHERE user_id = :user_id");
-                    $update_stmt->execute(['user_id' => $user['user_id']]);
-                    redirect(BASE_URL . 'auth/login.php');
-                    exit;
+                    redirect(BASE_URL . 'student/dashboard.php');
                 }
+                exit;
             } else {
-                // Token exists but expiry is null (malformed/old record) - Invalidate it
-                $_SESSION['form_message'] = "Invalid or malformed auto-login link. Please try logging in manually.";
+                // Token is expired or used
+                $_SESSION['form_message'] = $token_record['used'] ? "This auto-login link has already been used." : "Your auto-login link has expired. Please request a new one.";
                 $_SESSION['form_message_type'] = 'error';
-                $update_stmt = $pdo->prepare("UPDATE users SET auto_login_token = NULL, auto_login_token_expiry = NULL WHERE user_id = :user_id");
-                $update_stmt->execute(['user_id' => $user['user_id']]);
+
+                // Optionally clear expired/used token
+                $update_stmt = $pdo->prepare("DELETE FROM auto_login_tokens WHERE token = :token");
+                $update_stmt->execute(['token' => $token]);
                 redirect(BASE_URL . 'auth/login.php');
                 exit;
             }
         } else {
-            // No user found with that token (either never existed or was cleared due to expiry)
+            // No token found
             $_SESSION['form_message'] = "Invalid auto-login link. Please log in manually.";
             $_SESSION['form_message_type'] = 'error';
-            redirect(BASE_URL . 'auth/login.php'); // Redirect to login page
+            redirect(BASE_URL . 'auth/login.php');
             exit;
         }
     } catch (PDOException $e) {
-        // Log the database error for debugging purposes
         error_log("Auto-login Database Error: " . $e->getMessage());
-
         $_SESSION['form_message'] = "An unexpected error occurred during auto-login. Please try again.";
         $_SESSION['form_message_type'] = 'error';
-        redirect(BASE_URL . 'auth/login.php'); // Redirect to login page
+        redirect(BASE_URL . 'auth/login.php');
         exit;
     }
 } else {
-    // No token was provided in the URL
     $_SESSION['form_message'] = "Invalid auto-login request: No token provided.";
     $_SESSION['form_message_type'] = 'error';
-    redirect(BASE_URL . 'auth/login.php'); // Redirect to login page
+    redirect(BASE_URL . 'auth/login.php');
     exit;
 }
 ?>

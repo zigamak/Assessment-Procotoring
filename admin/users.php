@@ -195,65 +195,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 break;
+case 'send_payment_link':
+    $user_id = sanitize_input($_POST['user_id'] ?? 0);
+    $quiz_id = sanitize_input($_POST['quiz_id'] ?? 0);
 
-            case 'send_payment_link':
-                $user_id = sanitize_input($_POST['user_id'] ?? 0);
-                $quiz_id = sanitize_input($_POST['quiz_id'] ?? 0);
+    if (empty($user_id) || empty($quiz_id)) {
+        $message = display_message("User ID and Assessment ID are required.", "error");
+    } else {
+        try {
+            // Fetch user and quiz details
+            $stmt = $pdo->prepare("SELECT username, email, first_name, last_name FROM users WHERE user_id = :user_id");
+            $stmt->execute(['user_id' => $user_id]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                if (empty($user_id) || empty($quiz_id)) {
-                    $message = display_message("User ID and Assessment ID are required.", "error");
+            $stmt = $pdo->prepare("SELECT title, assessment_fee FROM quizzes WHERE quiz_id = :quiz_id");
+            $stmt->execute(['quiz_id' => $quiz_id]);
+            $quiz = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$user || !$quiz) {
+                $message = display_message("User or Assessment not found.", "error");
+            } else {
+                // Generate payment link with user details in URL
+                $payment_link = BASE_URL . "auth/payment.php?" . http_build_query([
+                    'quiz_id' => $quiz_id,
+                    'amount' => $quiz['assessment_fee'],
+                    'user_id' => $user_id,
+                    'email' => $user['email'],
+                    'first_name' => $user['first_name'],
+                    'last_name' => $user['last_name']
+                ]);
+
+                // Send email
+                ob_start();
+                require '../includes/email_templates/payment_link_email.php';
+                $email_body = ob_get_clean();
+                $email_body = str_replace('{{first_name}}', htmlspecialchars($user['first_name']), $email_body);
+                $email_body = str_replace('{{quiz_title}}', htmlspecialchars($quiz['title']), $email_body);
+                $email_body = str_replace('{{payment_link}}', $payment_link, $email_body);
+                $email_body = str_replace('{{amount}}', number_format($quiz['assessment_fee'], 2), $email_body);
+
+                $subject = "Payment Link for " . htmlspecialchars($quiz['title']) . " - Mackenny Assessment";
+
+                if (sendEmail($user['email'], $subject, $email_body)) {
+                    $message = display_message("Payment link sent successfully to " . htmlspecialchars($user['email']) . "!", "success");
                 } else {
-                    try {
-                        // Fetch user and quiz details
-                        $stmt = $pdo->prepare("SELECT username, email FROM users WHERE user_id = :user_id");
-                        $stmt->execute(['user_id' => $user_id]);
-                        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                        $stmt = $pdo->prepare("SELECT title, assessment_fee FROM quizzes WHERE quiz_id = :quiz_id");
-                        $stmt->execute(['quiz_id' => $quiz_id]);
-                        $quiz = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                        if (!$user || !$quiz) {
-                            $message = display_message("User or Assessment not found.", "error");
-                        } else {
-                            // Generate auto-login token
-                            $auto_login_token = bin2hex(random_bytes(32));
-                            $auto_login_token_expiry = date('Y-m-d H:i:s', strtotime('+2 weeks'));
-
-                            // Update user with new auto-login token
-                            $stmt = $pdo->prepare("UPDATE users SET auto_login_token = :token, auto_login_token_expiry = :expiry WHERE user_id = :user_id");
-                            $stmt->execute([
-                                'token' => $auto_login_token,
-                                'expiry' => $auto_login_token_expiry,
-                                'user_id' => $user_id
-                            ]);
-
-                            // Generate payment link
-                            $payment_link = BASE_URL . "auth/payment.php?quiz_id=" . urlencode($quiz_id) . "&amount=" . urlencode($quiz['assessment_fee']) . "&token=" . urlencode($auto_login_token);
-
-                            // Send email
-                            ob_start();
-                            require '../includes/email_templates/payment_link_email.php';
-                            $email_body = ob_get_clean();
-                            $email_body = str_replace('{{username}}', htmlspecialchars($user['username']), $email_body);
-                            $email_body = str_replace('{{quiz_title}}', htmlspecialchars($quiz['title']), $email_body);
-                            $email_body = str_replace('{{payment_link}}', $payment_link, $email_body);
-                            $email_body = str_replace('{{amount}}', number_format($quiz['assessment_fee'], 2), $email_body);
-
-                            $subject = "Payment Link for " . htmlspecialchars($quiz['title']) . " - Mackenny Assessment";
-
-                            if (sendEmail($user['email'], $subject, $email_body)) {
-                                $message = display_message("Payment link sent successfully to " . htmlspecialchars($user['email']) . "!", "success");
-                            } else {
-                                $message = display_message("Failed to send payment link email.", "error");
-                            }
-                        }
-                    } catch (PDOException $e) {
-                        error_log("Send Payment Link Error: " . $e->getMessage());
-                        $message = display_message("Database error while sending payment link: " . htmlspecialchars($e->getMessage()), "error");
-                    }
+                    $message = display_message("Failed to send payment link email.", "error");
                 }
-                break;
+            }
+        } catch (PDOException $e) {
+            error_log("Send Payment Link Error: " . $e->getMessage());
+            $message = display_message("Database error while sending payment link: " . htmlspecialchars($e->getMessage()), "error");
+        }
+    }
+    break;
         }
     }
 }

@@ -21,13 +21,25 @@ if (!isLoggedIn() || getUserRole() !== 'admin') {
     exit;
 }
 
-// Fetch all users
+// Fetch all users and their active auto-login tokens
 $users = [];
 try {
     $stmt = $pdo->query("
-        SELECT user_id, first_name, last_name, email, username, auto_login_token, auto_login_token_expiry
-        FROM users
-        ORDER BY last_name, first_name
+        SELECT
+            u.user_id,
+            u.first_name,
+            u.last_name,
+            u.email,
+            u.username,
+            alt.token AS auto_login_token,
+            alt.expires_at AS auto_login_token_expiry,
+            alt.used AS auto_login_token_used
+        FROM users u
+        LEFT JOIN auto_login_tokens alt
+            ON u.user_id = alt.user_id
+            AND alt.expires_at > NOW()
+            AND alt.used = 0
+        ORDER BY u.last_name, u.first_name
     ");
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -43,43 +55,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
 
     try {
         // Fetch user details
-        $stmt = $pdo->prepare("SELECT username, email, auto_login_token, auto_login_token_expiry FROM users WHERE user_id = :user_id");
+        $stmt = $pdo->prepare("SELECT username, email FROM users WHERE user_id = :user_id");
         $stmt->execute(['user_id' => $user_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user) {
-            // Generate new token if needed or if existing one is expired
-            $current_time = new DateTime();
-            $token_needs_generation = true;
+            $auto_login_token = bin2hex(random_bytes(32));
+            $expiry_date = new DateTime();
+            $expiry_date->modify('+2 weeks');
+            $auto_login_token_expiry = $expiry_date->format('Y-m-d H:i:s');
 
-            if ($user['auto_login_token'] && $user['auto_login_token_expiry']) {
-                // Only create DateTime object if expiry is not null
-                $expiry_time = new DateTime($user['auto_login_token_expiry']);
-                if ($current_time < $expiry_time) {
-                    $token_needs_generation = false; // Token is still valid
-                }
-            }
-            
-            $auto_login_token = $user['auto_login_token'];
-            $auto_login_token_expiry = $user['auto_login_token_expiry'];
+            // Invalidate any existing active tokens for this user before creating a new one
+            $stmt_invalidate = $pdo->prepare("
+                UPDATE auto_login_tokens
+                SET used = 1
+                WHERE user_id = :user_id AND expires_at > NOW() AND used = 0
+            ");
+            $stmt_invalidate->execute(['user_id' => $user_id]);
 
-            if ($token_needs_generation) {
-                $auto_login_token = bin2hex(random_bytes(32));
-                $expiry_date = new DateTime();
-                $expiry_date->modify('+2 weeks');
-                $auto_login_token_expiry = $expiry_date->format('Y-m-d H:i:s');
-
-                $stmt_update = $pdo->prepare("
-                    UPDATE users
-                    SET auto_login_token = :token, auto_login_token_expiry = :expiry
-                    WHERE user_id = :user_id
-                ");
-                $stmt_update->execute([
-                    'token' => $auto_login_token,
-                    'expiry' => $auto_login_token_expiry,
-                    'user_id' => $user_id
-                ]);
-            }
+            // Insert new token into auto_login_tokens table
+            // Explicitly set 'used' to 0 and 'created_at' will default to CURRENT_TIMESTAMP if configured in DB
+            $stmt_insert = $pdo->prepare("
+                INSERT INTO auto_login_tokens (user_id, token, expires_at, used)
+                VALUES (:user_id, :token, :expiry, 0)
+            ");
+            $stmt_insert->execute([
+                'user_id' => $user_id,
+                'token' => $auto_login_token,
+                'expiry' => $auto_login_token_expiry
+            ]);
 
             $auto_login_link = BASE_URL . "auth/auto_login.php?token=" . urlencode($auto_login_token);
 
@@ -114,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && isset($_
                     $_SESSION['form_message'] = "Failed to send auto-login link to {$user['email']}. Please try again.";
                     $_SESSION['form_message_type'] = 'error';
                 }
-            } else {
+            } else { // 'generate' action
                 error_log("Generate Auto-Login: Token generated for user_id {$user_id}");
                 $_SESSION['form_message'] = "Auto-login token generated for {$user['username']}. Link: " . $auto_login_link . " (Valid until " . format_datetime($auto_login_token_expiry) . ")";
                 $_SESSION['form_message_type'] = 'success';
@@ -145,6 +149,7 @@ $current_page = "generate_auto_login"; // For active state in navigation
     <div class="bg-white rounded-xl shadow-2xl p-6">
         <h2 class="text-2xl font-bold text-gray-800 mb-6">Manage Auto-Login Links</h2>
 
+        <!-- Notification Pop-up -->
         <div id="form-notification" class="absolute top-4 right-4 px-4 py-3 rounded-md hidden z-50" role="alert">
             <strong class="font-bold"></strong>
             <span class="block sm:inline" id="notification-message-content"></span>
@@ -175,16 +180,22 @@ $current_page = "generate_auto_login"; // For active state in navigation
                             <?php
                                 $token_status = 'None';
                                 $expiry_display = 'N/A';
-                                if ($user['auto_login_token'] && $user['auto_login_token_expiry']) {
+                                $is_token_active = false;
+
+                                if ($user['auto_login_token'] && $user['auto_login_token_expiry'] && !$user['auto_login_token_used']) {
                                     $expiry_time = new DateTime($user['auto_login_token_expiry']);
                                     $current_time = new DateTime();
                                     if ($current_time < $expiry_time) {
                                         $token_status = 'Active';
                                         $expiry_display = format_datetime($user['auto_login_token_expiry']);
+                                        $is_token_active = true;
                                     } else {
                                         $token_status = 'Expired';
                                         $expiry_display = format_datetime($user['auto_login_token_expiry']) . ' (Expired)';
                                     }
+                                } elseif ($user['auto_login_token_used']) {
+                                    $token_status = 'Used';
+                                    $expiry_display = format_datetime($user['auto_login_token_expiry']) . ' (Used)';
                                 }
                             ?>
                             <tr class="hover:bg-gray-50 transition duration-200">
@@ -210,17 +221,17 @@ $current_page = "generate_auto_login"; // For active state in navigation
 
                                         <div class="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 hidden" id="dropdown-menu-<?php echo $user['user_id']; ?>" role="menu" aria-orientation="vertical" aria-labelledby="options-menu-<?php echo $user['user_id']; ?>">
                                             <div class="py-1" role="none">
-                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Generate new auto-login token for <?php echo htmlspecialchars($user['username']); ?>? This will invalidate any existing token.');">
+                                                <form id="generate-form-<?php echo $user['user_id']; ?>" action="generate_auto_login.php" method="POST" class="block" onsubmit="return showConfirmModal('Generate new auto-login token for <?php echo htmlspecialchars($user['username']); ?>? This will invalidate any existing active token.', this);">
                                                     <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
                                                     <input type="hidden" name="action" value="generate">
                                                     <button type="submit" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100" role="menuitem">
                                                         Generate New Token
                                                     </button>
                                                 </form>
-                                                <button type="button" onclick="copyAutoLoginLink(<?php echo htmlspecialchars($user['user_id']); ?>, '<?php echo BASE_URL . "auth/auto_login.php?token=" . urlencode($user['auto_login_token']); ?>')" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 <?php echo empty($user['auto_login_token']) || $token_status === 'Expired' ? 'opacity-50 cursor-not-allowed' : ''; ?>" role="menuitem" <?php echo empty($user['auto_login_token']) || $token_status === 'Expired' ? 'disabled' : ''; ?>>
+                                                <button type="button" onclick="copyAutoLoginLink(<?php echo htmlspecialchars($user['user_id']); ?>, '<?php echo $is_token_active ? (BASE_URL . "auth/auto_login.php?token=" . urlencode($user['auto_login_token'])) : ''; ?>')" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 <?php echo !$is_token_active ? 'opacity-50 cursor-not-allowed' : ''; ?>" role="menuitem" <?php echo !$is_token_active ? 'disabled' : ''; ?>>
                                                     Copy Link
                                                 </button>
-                                                <form action="generate_auto_login.php" method="POST" class="block" onsubmit="return confirm('Send auto-login link to <?php echo htmlspecialchars($user['email']); ?>? A new token will be generated if the current one is expired or non-existent.');">
+                                                <form id="send-form-<?php echo $user['user_id']; ?>" action="generate_auto_login.php" method="POST" class="block" onsubmit="return showConfirmModal('Send auto-login link to <?php echo htmlspecialchars($user['email']); ?>? A new token will be generated and any existing active token will be invalidated.', this);">
                                                     <input type="hidden" name="user_id" value="<?php echo htmlspecialchars($user['user_id']); ?>">
                                                     <input type="hidden" name="action" value="send">
                                                     <button type="submit" class="text-gray-700 block px-4 py-2 text-sm w-full text-left hover:bg-gray-100" role="menuitem">
@@ -240,9 +251,32 @@ $current_page = "generate_auto_login"; // For active state in navigation
     </div>
 </main>
 
+<!-- Custom Confirmation Modal -->
+<div id="confirmation-modal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] hidden">
+    <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-auto transform transition-all sm:w-full">
+        <div class="text-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">Confirm Action</h3>
+            <div class="mt-2">
+                <p class="text-sm text-gray-500" id="modal-message"></p>
+            </div>
+        </div>
+        <div class="mt-5 sm:mt-6 sm:grid sm:grid-cols-2 sm:gap-3 sm:grid-flow-row-dense">
+            <button type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-2 sm:text-sm" onclick="confirmAction()">
+                Confirm
+            </button>
+            <button type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:col-start-1 sm:text-sm" onclick="cancelAction()">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 <?php include '../includes/footer_admin.php'; ?>
 
 <script>
+    // Global variable to store the form that needs to be submitted after confirmation
+    let formToSubmit = null;
+
     function displayNotification(message, type) {
         const notificationContainer = document.getElementById('form-notification');
         const messageContentElement = document.getElementById('notification-message-content');
@@ -292,18 +326,24 @@ $current_page = "generate_auto_login"; // For active state in navigation
         closeAllDropdowns();
 
         if (!link || link.includes("null") || link.includes("undefined") || link.endsWith("token=")) {
-            displayNotification("No auto-login token exists for this user or it's invalid. Please generate a new one first.", "warning");
+            displayNotification("No active auto-login token exists for this user. Please generate a new one first.", "warning");
             return;
         }
 
-        navigator.clipboard.writeText(link)
-            .then(() => {
-                displayNotification('Auto-login link copied to clipboard!', 'success');
-            })
-            .catch(err => {
-                console.error('Failed to copy link: ', err);
-                displayNotification('Failed to copy link. Please copy it manually from the "Generate" message if available.', 'error');
-            });
+        document.execCommand('copy'); // Use document.execCommand for clipboard operations in iframes
+        const tempInput = document.createElement('textarea');
+        tempInput.value = link;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        try {
+            document.execCommand('copy');
+            displayNotification('Auto-login link copied to clipboard!', 'success');
+        } catch (err) {
+            console.error('Failed to copy link: ', err);
+            displayNotification('Failed to copy link. Please copy it manually from the "Generate" message if available.', 'error');
+        } finally {
+            document.body.removeChild(tempInput);
+        }
     }
 
     // Dropdown functionality
@@ -341,12 +381,36 @@ $current_page = "generate_auto_login"; // For active state in navigation
         }
     });
 
-
     function closeAllDropdowns() {
         const allDropdowns = document.querySelectorAll('[id^="dropdown-menu-"]');
         allDropdowns.forEach(dropdown => {
             dropdown.classList.add('hidden');
         });
+    }
+
+    // Custom Confirmation Modal Functions
+    function showConfirmModal(message, form) {
+        const modal = document.getElementById('confirmation-modal');
+        const modalMessage = document.getElementById('modal-message');
+        modalMessage.textContent = message;
+        formToSubmit = form; // Store the form reference
+        modal.classList.remove('hidden');
+        return false; // Prevent default form submission
+    }
+
+    function confirmAction() {
+        const modal = document.getElementById('confirmation-modal');
+        modal.classList.add('hidden');
+        if (formToSubmit) {
+            formToSubmit.submit(); // Submit the stored form
+        }
+        formToSubmit = null; // Clear the stored form
+    }
+
+    function cancelAction() {
+        const modal = document.getElementById('confirmation-modal');
+        modal.classList.add('hidden');
+        formToSubmit = null; // Clear the stored form
     }
 
     document.addEventListener('DOMContentLoaded', function() {
